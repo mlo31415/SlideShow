@@ -135,7 +135,7 @@ class SlideShow(tk.Tk):
         self.imageLabel=tk.Label(innerFrame, bg="black")
         self.imageLabel.pack(side=tk.TOP)
 
-        self.descLabel=tk.Label(innerFrame, text="", font=("Segoe UI", 15), fg="white", bg="black",
+        self.descLabel=tk.Label(innerFrame, text="", font=("Segoe UI", 22), fg="white", bg="black",
                                 justify=tk.CENTER, height=2, wraplength=self.winfo_screenwidth()-100)
         self.descLabel.pack(side=tk.TOP)
 
