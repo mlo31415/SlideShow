@@ -1,0 +1,12 @@
+# SlideShow settings
+# Directory is the root of the tree of images to be displayed
+Directory=C:\Users\mlo\Pictures
+# Order is Sequential or Random
+Order=Sequential
+# Display Time is the number of seconds each image is shown
+Display Time=10
+Title=photos.fanac.org
+# If True, show the subdirectory chain under the title for images not in the top-level directory
+Display Subdirectory=True
+# Seconds of no user input after which a paused show resumes on its own
+Pause Timeout=240
