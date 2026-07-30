@@ -18,7 +18,7 @@ there is none, the image's filename without the extension is used.
 * **Add Info** — placeholder dialog for a future feature
 * **Exit** — exits the program
 
-**Esc** also exits the program.
+Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = Exit.
 
 ## Settings
 

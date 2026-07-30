@@ -19,7 +19,8 @@ An image's description is taken from a .txt file with the same name in the
 same directory (e.g., "xyz.jpg" described by "xyz.txt").  If there is none,
 the image's filename without the extension is used.
 
-Buttons: Prev, Pause, Continue, Next, Add Info, Exit.  Esc also exits.
+Buttons: Prev, Pause, Continue, Next, Add Info, Exit.
+Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
 
 Requires: pip install Pillow
 """
@@ -103,10 +104,10 @@ class SlideShow(tk.Tk):
         self.configure(bg="black")
         self.attributes("-fullscreen", True)
 
-        self.titleLabel=tk.Label(self, text=self.titleText, font=("Segoe UI", 32, "bold"), fg="white", bg="black")
+        self.titleLabel=tk.Label(self, text=self.titleText, font=("Segoe UI", 32, "bold"), fg="lightyellow", bg="black")
         self.titleLabel.pack(side=tk.TOP, pady=(10, 0))
 
-        self.subdirLabel=tk.Label(self, text="", font=("Segoe UI", 14), fg="#bbbbbb", bg="black")
+        self.subdirLabel=tk.Label(self, text="", font=("Segoe UI", 28), fg="#bbbbbb", bg="black")
         self.subdirLabel.pack(side=tk.TOP)
 
         # Bottom-up: buttons at the very bottom, description just above them, image fills the rest.
@@ -144,6 +145,8 @@ class SlideShow(tk.Tk):
         # Any user input resets the pause-timeout clock
         self.bind_all("<Key>", self.OnUserInput)
         self.bind_all("<Button>", self.OnUserInput)
+        self.bind("<Left>", lambda e: self.OnPrev())
+        self.bind("<Right>", lambda e: self.OnNext())
         self.bind("<Escape>", lambda e: self.destroy())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
@@ -189,12 +192,13 @@ class SlideShow(tk.Tk):
     def ShowImage(self) -> None:
         pathname=self.images[self.history[self.histpos]]
 
-        # The optional subdirectory line
+        # The optional subdirectory line: the path below the root directory, so photos in
+        # the root itself show nothing, and deeper ones show e.g. "A" or "A/B"
         subdir=os.path.relpath(os.path.dirname(pathname), self.rootDirectory)
         if not self.displaySubdirectory or subdir == ".":
             self.subdirLabel.config(text="")
         else:
-            self.subdirLabel.config(text=subdir)
+            self.subdirLabel.config(text=subdir.replace(os.sep, "/"))
 
         # The description: from a matching .txt file if there is one, else the filename
         descPath=os.path.splitext(pathname)[0]+".txt"
