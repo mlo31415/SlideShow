@@ -27,7 +27,8 @@ Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
 The settings file is monitored while the show is running: saving a change to it
 applies just the changed parameters on the fly (a changed Directory restarts the
 show from the new tree; anything else leaves the current image undisturbed).
-Invalid values are ignored; missing parameters revert to their defaults.
+Unrecognized parameter names and unusable values are reported in a warning
+dialog and ignored; missing parameters revert to their defaults.
 
 Requires: pip install Pillow
 """
@@ -46,6 +47,7 @@ SETTINGS_FILE="SlideShow settings.txt"
 IMAGE_EXTENSIONS={".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 DEFAULT_TITLE_FONT="Segoe UI"
 DEFAULT_TITLE_FONT_SIZE=32
+KNOWN_PARAMETERS={"directory", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout"}
 
 
 # Read a settings file of name=value lines.  Blank lines and lines starting with '#' are ignored.
@@ -82,13 +84,25 @@ class SlideShow(tk.Tk):
 
         self.installedFonts=sorted(tkfont.families(self))      # All font families tk knows about
 
+        self.startupProblems=self.ValidateSettings(settings)       # Reported once the show is up
+
         self.rootDirectory=Get("Directory", "")
         self.randomOrder=Get("Order", "Sequential").casefold().startswith("random")
-        self.displayTime=float(Get("Display Time", "10"))
+        try:
+            self.displayTime=float(Get("Display Time", "10"))
+        except ValueError:
+            self.displayTime=10.0
+        if self.displayTime <= 0:
+            self.displayTime=10.0
         self.titleText=Get("Title", "photos.fanac.org")
         self.titleFontName, self.titleFontSize=self.ResolveTitleFont(Get("Title Font", ""), Get("Title Font Size", ""))
         self.displaySubdirectory=IsTrue("Display Subdirectory", "True")
-        self.pauseTimeout=float(Get("Pause Timeout", "240"))
+        try:
+            self.pauseTimeout=float(Get("Pause Timeout", "240"))
+        except ValueError:
+            self.pauseTimeout=240.0
+        if self.pauseTimeout <= 0:
+            self.pauseTimeout=240.0
 
         if len(self.rootDirectory) == 0 or not os.path.isdir(self.rootDirectory):
             self.Fatal(f"The Directory setting ('{self.rootDirectory}') is missing or is not a directory.\n\nEdit '{settingsPath}' to point to a directory of images.")
@@ -178,21 +192,78 @@ class SlideShow(tk.Tk):
         self.NextImage()
         self.ScheduleAdvance()
         self.OnTick()
+        if len(self.startupProblems) > 0:
+            self.ShowSettingsProblems(self.startupProblems)
 
+
+    # Return a list of complaints about unrecognized parameter names and unusable values.
+    # (The Directory parameter is checked separately, since what is fatal at startup is
+    # merely ignorable when the file is edited while running.)
+    def ValidateSettings(self, settings: dict[str, str]) -> list[str]:
+        problems=[]
+        for name in settings.keys():
+            if name not in KNOWN_PARAMETERS:
+                problems.append(f"Unrecognized parameter '{name}'  (ignoring it)")
+
+        if "order" in settings:
+            val=settings["order"].casefold()
+            if not val.startswith("seq") and not val.startswith("random"):
+                problems.append(f"Order='{settings['order']}' should be Sequential or Random  (ignoring it)")
+
+        for pname, label in (("display time", "Display Time"), ("pause timeout", "Pause Timeout"), ("title font size", "Title Font Size")):
+            if pname in settings:
+                try:
+                    if float(settings[pname]) <= 0:
+                        problems.append(f"{label}='{settings[pname]}' should be greater than zero  (ignoring it)")
+                except ValueError:
+                    problems.append(f"{label}='{settings[pname]}' should be a number  (ignoring it)")
+
+        if "display subdirectory" in settings and settings["display subdirectory"].casefold() not in ("true", "yes", "false", "no"):
+            problems.append(f"Display Subdirectory='{settings['display subdirectory']}' should be True or False  (ignoring it)")
+
+        fontName=settings.get("title font", "").strip()
+        if len(fontName) > 0 and self.FindFontFamily(fontName) is None:
+            problems.append(f"Title Font='{fontName}' is not an installed font  (using {DEFAULT_TITLE_FONT})")
+
+        return problems
+
+
+    # Report settings-file problems in a warning dialog.  Like the Add Info dialog, the
+    # show is held while it is up and returns to its previous pause state afterwards.
+    def ShowSettingsProblems(self, problems: list[str]) -> None:
+        wasPaused=self.paused
+        self.paused=True
+        self.dialogOpen=True
+        self.CancelAdvance()
+        self.UpdateButtonStates()
+
+        messagebox.showwarning("SlideShow settings", "Problems in the settings file:\n\n"+"\n".join(problems), parent=self)
+
+        self.dialogOpen=False
+        self.lastInputTime=time.time()
+        if wasPaused:
+            self.UpdateButtonStates()
+        else:
+            self.Resume()
+
+
+    # Find an installed font family by name, case-insensitive, first as an exact match and
+    # then as a prefix (so "Hobo" will find an installed "Hobo Std").  None if no match.
+    def FindFontFamily(self, name: str) -> str | None:
+        name=name.strip().casefold()
+        if len(name) == 0:
+            return None
+        matches=[f for f in self.installedFonts if f.casefold() == name]
+        if len(matches) == 0:
+            matches=[f for f in self.installedFonts if f.casefold().startswith(name)]
+        return matches[0] if len(matches) > 0 else None
 
     # Turn the "Title Font"/"Title Font Size" parameter values into a usable (family, size)
-    # pair, falling back to the default for any missing or unusable value.  The font name is
-    # matched against the installed font families case-insensitive, first exactly and then as
-    # a prefix (so "Hobo" will find an installed "Hobo Std").
+    # pair, falling back to the default for any missing or unusable value.
     def ResolveTitleFont(self, name: str, size: str) -> tuple[str, int]:
-        family=DEFAULT_TITLE_FONT
-        name=name.strip().casefold()
-        if len(name) > 0:
-            matches=[f for f in self.installedFonts if f.casefold() == name]
-            if len(matches) == 0:
-                matches=[f for f in self.installedFonts if f.casefold().startswith(name)]
-            if len(matches) > 0:
-                family=matches[0]
+        family=self.FindFontFamily(name)
+        if family is None:
+            family=DEFAULT_TITLE_FONT
         try:
             sz=int(float(size))
         except ValueError:
@@ -326,12 +397,16 @@ class SlideShow(tk.Tk):
             self.pendingSettings=settings       # First look at new content -- wait for a stable second read
             return
         self.pendingSettings=None
-        self.ApplySettings(settings)
+        problems=self.ValidateSettings(settings)+self.ApplySettings(settings)
+        if len(problems) > 0:
+            self.ShowSettingsProblems(problems)
 
     # Apply newly-read settings, each parameter taking effect only if it changed.
     # Invalid values (bad numbers, bad directory) leave the current value in place;
-    # missing parameters revert to their defaults.
-    def ApplySettings(self, settings: dict[str, str]) -> None:
+    # missing parameters revert to their defaults.  Returns a list of complaints
+    # about a Directory value which could not be used.
+    def ApplySettings(self, settings: dict[str, str]) -> list[str]:
+        problems=[]
         def Get(name: str, default: str) -> str:
             return settings.get(name.casefold(), default)
 
@@ -346,10 +421,12 @@ class SlideShow(tk.Tk):
             self.titleFontSize=fontSize
             self.titleLabel.config(font=(fontName, fontSize, "bold"))
 
-        displaySubdirectory=Get("Display Subdirectory", "True").casefold() in ("true", "yes")
-        if displaySubdirectory != self.displaySubdirectory:
-            self.displaySubdirectory=displaySubdirectory
-            self.ShowImage()            # Refresh the current image's subdirectory line
+        val=Get("Display Subdirectory", "True").casefold()
+        if val in ("true", "yes", "false", "no"):        # An unrecognized value keeps the current setting
+            displaySubdirectory=val in ("true", "yes")
+            if displaySubdirectory != self.displaySubdirectory:
+                self.displaySubdirectory=displaySubdirectory
+                self.ShowImage()        # Refresh the current image's subdirectory line
 
         try:
             displayTime=float(Get("Display Time", "10"))
@@ -366,19 +443,31 @@ class SlideShow(tk.Tk):
         if pauseTimeout > 0:
             self.pauseTimeout=pauseTimeout
 
-        self.randomOrder=Get("Order", "Sequential").casefold().startswith("random")
+        order=Get("Order", "Sequential").casefold()
+        if order.startswith("random"):
+            self.randomOrder=True
+        elif order.startswith("seq"):
+            self.randomOrder=False
+        # else: unrecognized value -- keep the current setting
 
         # A new image source: rescan, and only if the new tree has images, switch to it
         newDirectory=Get("Directory", "")
-        if os.path.normcase(newDirectory) != os.path.normcase(self.rootDirectory) and os.path.isdir(newDirectory):
-            images=self.ScanImages(newDirectory)
-            if len(images) > 0:
-                self.rootDirectory=newDirectory
-                self.images=images
-                self.history=[]
-                self.histpos=-1
-                self.NextImage()
-                self.ScheduleAdvance()
+        if os.path.normcase(newDirectory) != os.path.normcase(self.rootDirectory):
+            if not os.path.isdir(newDirectory):
+                problems.append(f"Directory='{newDirectory}' is not a directory  (keeping the current one)")
+            else:
+                images=self.ScanImages(newDirectory)
+                if len(images) == 0:
+                    problems.append(f"Directory='{newDirectory}' contains no images  (keeping the current one)")
+                else:
+                    self.rootDirectory=newDirectory
+                    self.images=images
+                    self.history=[]
+                    self.histpos=-1
+                    self.NextImage()
+                    self.ScheduleAdvance()
+
+        return problems
 
 
     # -------------------- Buttons --------------------

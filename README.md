@@ -39,8 +39,9 @@ in the program's directory:
 The settings file is monitored while the show is running: saving a change to it
 applies just the changed parameters on the fly.  A changed Directory restarts
 the show from the new tree; any other change leaves the current image
-undisturbed.  Invalid values (bad numbers, nonexistent directory) are ignored,
-and missing parameters revert to their defaults.
+undisturbed.  Unrecognized parameter names and unusable values (bad numbers,
+uninstalled fonts, a nonexistent directory) are reported in a warning dialog
+and otherwise ignored; missing parameters revert to their defaults.
 
 ## Requirements
 
