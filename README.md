@@ -16,8 +16,9 @@ there is none, the image's filename without the extension is used.
 * **Continue** — resume advancing
 * **Next** — move to the next image
 * **Add Info** — placeholder dialog for a future feature
+* **Exit** — exits the program
 
-**Esc** exits the program.
+**Esc** also exits the program.
 
 ## Settings
 

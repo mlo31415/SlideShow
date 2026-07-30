@@ -19,7 +19,7 @@ An image's description is taken from a .txt file with the same name in the
 same directory (e.g., "xyz.jpg" described by "xyz.txt").  If there is none,
 the image's filename without the extension is used.
 
-Buttons: Prev, Pause, Continue, Next, Add Info.  Esc exits.
+Buttons: Prev, Pause, Continue, Next, Add Info, Exit.  Esc also exits.
 
 Requires: pip install Pillow
 """
@@ -123,13 +123,21 @@ class SlideShow(tk.Tk):
         self.continueButton=MakeButton("Continue", self.OnContinue)
         self.nextButton=MakeButton("Next", self.OnNext)
         self.addInfoButton=MakeButton("Add Info", self.OnAddInfo)
+        self.exitButton=MakeButton("Exit", self.destroy)
 
-        self.descLabel=tk.Label(self, text="", font=("Segoe UI", 15), fg="white", bg="black",
+        # The image and its caption are stacked in a frame which is centered in the
+        # remaining space, so the caption sits directly below the image and moves with it.
+        self.centerFrame=tk.Frame(self, bg="black")
+        self.centerFrame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        innerFrame=tk.Frame(self.centerFrame, bg="black")
+        innerFrame.pack(expand=True)
+
+        self.imageLabel=tk.Label(innerFrame, bg="black")
+        self.imageLabel.pack(side=tk.TOP)
+
+        self.descLabel=tk.Label(innerFrame, text="", font=("Segoe UI", 15), fg="white", bg="black",
                                 justify=tk.CENTER, height=2, wraplength=self.winfo_screenwidth()-100)
-        self.descLabel.pack(side=tk.BOTTOM)
-
-        self.imageLabel=tk.Label(self, bg="black")
-        self.imageLabel.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.descLabel.pack(side=tk.TOP)
 
         self.UpdateButtonStates()
 
@@ -202,11 +210,11 @@ class SlideShow(tk.Tk):
             desc=os.path.splitext(os.path.basename(pathname))[0]
         self.descLabel.config(text=desc)
 
-        # The image itself, scaled to fit the available space
+        # The image itself, scaled to fit the space left over after the caption below it
         try:
             img=Image.open(pathname)
-            width=self.imageLabel.winfo_width()
-            height=self.imageLabel.winfo_height()
+            width=self.centerFrame.winfo_width()-20
+            height=self.centerFrame.winfo_height()-self.descLabel.winfo_reqheight()-10
             if width < 50 or height < 50:       # Not laid out yet -- fall back to a guess
                 width=self.winfo_screenwidth()-40
                 height=self.winfo_screenheight()-300
