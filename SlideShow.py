@@ -198,7 +198,12 @@ class SlideShow(tk.Tk):
         if not self.displaySubdirectory or subdir == ".":
             self.subdirLabel.config(text="")
         else:
-            self.subdirLabel.config(text=subdir.replace(os.sep, "/"))
+            # When a directory's name is a prefix of the directory below it (e.g.,
+            # "Tropicon/Tropicon 27"), displaying it adds nothing, so suppress it
+            parts=subdir.split(os.sep)
+            while len(parts) > 1 and parts[1].casefold().startswith(parts[0].casefold()):
+                parts.pop(0)
+            self.subdirLabel.config(text="/".join(parts))
 
         # The description: from a matching .txt file if there is one, else the filename
         descPath=os.path.splitext(pathname)[0]+".txt"
