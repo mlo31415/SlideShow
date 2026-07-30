@@ -1,11 +1,14 @@
 # SlideShow settings
 # Directory is the root of the tree of images to be displayed
-Directory=C:\Users\mlo\Pictures
+Directory=C:\Users\mlo\Documents\usr\Fancyclopedia\Python\SlideShow\Test photos
 # Order is Sequential or Random
 Order=Sequential
 # Display Time is the number of seconds each image is shown
-Display Time=10
+Display Time=7
 Title=photos.fanac.org
+# Title Font and Title Font Size set the typeface of the title line (defaults: Segoe UI, 32)
+Title Font=Chicle
+Title Font Size=48
 # If True, show the subdirectory chain under the title for images not in the top-level directory
 Display Subdirectory=True
 # Seconds of no user input after which a paused show resumes on its own
