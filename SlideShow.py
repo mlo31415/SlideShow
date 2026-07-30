@@ -22,6 +22,11 @@ the image's filename without the extension is used.
 Buttons: Prev, Pause, Continue, Next, Add Info, Exit.
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
 
+The settings file is monitored while the show is running: saving a change to it
+applies just the changed parameters on the fly (a changed Directory restarts the
+show from the new tree; anything else leaves the current image undisturbed).
+Invalid values are ignored; missing parameters revert to their defaults.
+
 Requires: pip install Pillow
 """
 
@@ -80,13 +85,14 @@ class SlideShow(tk.Tk):
         if len(self.rootDirectory) == 0 or not os.path.isdir(self.rootDirectory):
             self.Fatal(f"The Directory setting ('{self.rootDirectory}') is missing or is not a directory.\n\nEdit '{settingsPath}' to point to a directory of images.")
 
+        # The settings file is monitored while running: changes to it are applied on the
+        # fly, each parameter taking effect only if its value actually changed.
+        self.settingsPath=settingsPath
+        self.lastSettingsMtime=os.stat(settingsPath).st_mtime
+        self.pendingSettings=None       # Newly-read settings awaiting a second identical read (debounce)
+
         # -------------------- Find the images --------------------
-        self.images: list[str]=[]       # Full pathnames of all images found, in sorted order
-        for dirpath, dirnames, filenames in os.walk(self.rootDirectory):
-            dirnames.sort(key=str.casefold)
-            for fname in sorted(filenames, key=str.casefold):
-                if os.path.splitext(fname)[1].casefold() in IMAGE_EXTENSIONS:
-                    self.images.append(os.path.join(dirpath, fname))
+        self.images=self.ScanImages(self.rootDirectory)
         if len(self.images) == 0:
             self.Fatal(f"No image files found under '{self.rootDirectory}'.")
 
@@ -163,7 +169,19 @@ class SlideShow(tk.Tk):
     def Start(self) -> None:
         self.NextImage()
         self.ScheduleAdvance()
-        self.CheckPauseTimeout()
+        self.OnTick()
+
+
+    # Return the full pathnames of all images in the tree under rootDirectory, in sorted order
+    @staticmethod
+    def ScanImages(rootDirectory: str) -> list[str]:
+        images=[]
+        for dirpath, dirnames, filenames in os.walk(rootDirectory):
+            dirnames.sort(key=str.casefold)
+            for fname in sorted(filenames, key=str.casefold):
+                if os.path.splitext(fname)[1].casefold() in IMAGE_EXTENSIONS:
+                    images.append(os.path.join(dirpath, fname))
+        return images
 
 
     # -------------------- Image selection --------------------
@@ -250,12 +268,81 @@ class SlideShow(tk.Tk):
         self.NextImage()
         self.ScheduleAdvance()
 
-    # Once a second, check whether a paused show has sat without user input for longer
-    # than the pause timeout.  If so, resume it.
-    def CheckPauseTimeout(self) -> None:
+    # Once a second: resume a paused show which has sat without user input for longer
+    # than the pause timeout, and check the settings file for changes.
+    def OnTick(self) -> None:
         if self.paused and not self.dialogOpen and time.time()-self.lastInputTime >= self.pauseTimeout:
             self.Resume()
-        self.after(1000, self.CheckPauseTimeout)
+        self.CheckSettingsFile()
+        self.after(1000, self.OnTick)
+
+
+    # -------------------- Live settings reload --------------------
+    # If the settings file has changed, re-read it and apply only the parameters whose
+    # values actually changed.  To avoid acting on a half-written file, a change is
+    # applied only after two consecutive ticks read identical content.
+    def CheckSettingsFile(self) -> None:
+        try:
+            mtime=os.stat(self.settingsPath).st_mtime
+        except OSError:
+            return                      # File briefly missing (mid-save) -- try again next tick
+        if mtime == self.lastSettingsMtime and self.pendingSettings is None:
+            return
+        settings=ReadSettings(self.settingsPath)
+        if settings is None:
+            return
+        self.lastSettingsMtime=mtime
+        if settings != self.pendingSettings:
+            self.pendingSettings=settings       # First look at new content -- wait for a stable second read
+            return
+        self.pendingSettings=None
+        self.ApplySettings(settings)
+
+    # Apply newly-read settings, each parameter taking effect only if it changed.
+    # Invalid values (bad numbers, bad directory) leave the current value in place;
+    # missing parameters revert to their defaults.
+    def ApplySettings(self, settings: dict[str, str]) -> None:
+        def Get(name: str, default: str) -> str:
+            return settings.get(name.casefold(), default)
+
+        title=Get("Title", "photos.fanac.org")
+        if title != self.titleText:
+            self.titleText=title
+            self.titleLabel.config(text=title)
+
+        displaySubdirectory=Get("Display Subdirectory", "True").casefold() in ("true", "yes")
+        if displaySubdirectory != self.displaySubdirectory:
+            self.displaySubdirectory=displaySubdirectory
+            self.ShowImage()            # Refresh the current image's subdirectory line
+
+        try:
+            displayTime=float(Get("Display Time", "10"))
+        except ValueError:
+            displayTime=self.displayTime
+        if displayTime > 0 and displayTime != self.displayTime:
+            self.displayTime=displayTime
+            self.ScheduleAdvance()      # Restart the clock with the new time (no-op while paused)
+
+        try:
+            pauseTimeout=float(Get("Pause Timeout", "240"))
+        except ValueError:
+            pauseTimeout=self.pauseTimeout
+        if pauseTimeout > 0:
+            self.pauseTimeout=pauseTimeout
+
+        self.randomOrder=Get("Order", "Sequential").casefold().startswith("random")
+
+        # A new image source: rescan, and only if the new tree has images, switch to it
+        newDirectory=Get("Directory", "")
+        if os.path.normcase(newDirectory) != os.path.normcase(self.rootDirectory) and os.path.isdir(newDirectory):
+            images=self.ScanImages(newDirectory)
+            if len(images) > 0:
+                self.rootDirectory=newDirectory
+                self.images=images
+                self.history=[]
+                self.histpos=-1
+                self.NextImage()
+                self.ScheduleAdvance()
 
 
     # -------------------- Buttons --------------------

@@ -34,6 +34,12 @@ in the program's directory:
 | Display Subdirectory | Show the subdirectory chain for images below the top level | True |
 | Pause Timeout | Seconds of no user input after which a paused show resumes | 240 |
 
+The settings file is monitored while the show is running: saving a change to it
+applies just the changed parameters on the fly.  A changed Directory restarts
+the show from the new tree; any other change leaves the current image
+undisturbed.  Invalid values (bad numbers, nonexistent directory) are ignored,
+and missing parameters revert to their defaults.
+
 ## Requirements
 
 Python 3.10+ and Pillow:
