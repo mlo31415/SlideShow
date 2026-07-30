@@ -31,6 +31,8 @@ in the program's directory:
 | Order | `Sequential` or `Random` | Sequential |
 | Display Time | Seconds each image is shown | 10 |
 | Title | Title shown at the top | photos.fanac.org |
+| Title Font | Font family for the title (must be an installed font; matched case-insensitive, prefixes allowed, so "Hobo" finds "Hobo Std") | Segoe UI |
+| Title Font Size | Point size for the title | 32 |
 | Display Subdirectory | Show the subdirectory chain for images below the top level | True |
 | Pause Timeout | Seconds of no user input after which a paused show resumes | 240 |
 

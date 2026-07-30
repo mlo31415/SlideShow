@@ -10,6 +10,8 @@ The directory to be displayed and the other operating parameters are read from
     Order                 "Sequential" or "Random"  (default: Sequential)
     Display Time          Seconds each image is displayed  (default: 10)
     Title                 Title shown at the top  (default: "photos.fanac.org")
+    Title Font            Font family for the title; must be installed  (default: Segoe UI)
+    Title Font Size       Point size for the title  (default: 32)
     Display Subdirectory  If True, show the subdirectory chain under the title
                           for images not in the top-level directory  (default: True)
     Pause Timeout         Seconds of no user input after which a paused show
@@ -36,11 +38,14 @@ import time
 import random
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import font as tkfont
 
 from PIL import Image, ImageTk
 
 SETTINGS_FILE="SlideShow settings.txt"
 IMAGE_EXTENSIONS={".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
+DEFAULT_TITLE_FONT="Segoe UI"
+DEFAULT_TITLE_FONT_SIZE=32
 
 
 # Read a settings file of name=value lines.  Blank lines and lines starting with '#' are ignored.
@@ -75,10 +80,13 @@ class SlideShow(tk.Tk):
         def IsTrue(name: str, default: str) -> bool:
             return Get(name, default).casefold() in ("true", "yes")
 
+        self.installedFonts=sorted(tkfont.families(self))      # All font families tk knows about
+
         self.rootDirectory=Get("Directory", "")
         self.randomOrder=Get("Order", "Sequential").casefold().startswith("random")
         self.displayTime=float(Get("Display Time", "10"))
         self.titleText=Get("Title", "photos.fanac.org")
+        self.titleFontName, self.titleFontSize=self.ResolveTitleFont(Get("Title Font", ""), Get("Title Font Size", ""))
         self.displaySubdirectory=IsTrue("Display Subdirectory", "True")
         self.pauseTimeout=float(Get("Pause Timeout", "240"))
 
@@ -110,7 +118,7 @@ class SlideShow(tk.Tk):
         self.configure(bg="black")
         self.attributes("-fullscreen", True)
 
-        self.titleLabel=tk.Label(self, text=self.titleText, font=("Segoe UI", 32, "bold"), fg="lightyellow", bg="black")
+        self.titleLabel=tk.Label(self, text=self.titleText, font=(self.titleFontName, self.titleFontSize, "bold"), fg="lightyellow", bg="black")
         self.titleLabel.pack(side=tk.TOP, pady=(10, 0))
 
         self.subdirLabel=tk.Label(self, text="", font=("Segoe UI", 28), fg="#bbbbbb", bg="black")
@@ -170,6 +178,28 @@ class SlideShow(tk.Tk):
         self.NextImage()
         self.ScheduleAdvance()
         self.OnTick()
+
+
+    # Turn the "Title Font"/"Title Font Size" parameter values into a usable (family, size)
+    # pair, falling back to the default for any missing or unusable value.  The font name is
+    # matched against the installed font families case-insensitive, first exactly and then as
+    # a prefix (so "Hobo" will find an installed "Hobo Std").
+    def ResolveTitleFont(self, name: str, size: str) -> tuple[str, int]:
+        family=DEFAULT_TITLE_FONT
+        name=name.strip().casefold()
+        if len(name) > 0:
+            matches=[f for f in self.installedFonts if f.casefold() == name]
+            if len(matches) == 0:
+                matches=[f for f in self.installedFonts if f.casefold().startswith(name)]
+            if len(matches) > 0:
+                family=matches[0]
+        try:
+            sz=int(float(size))
+        except ValueError:
+            sz=DEFAULT_TITLE_FONT_SIZE
+        if sz <= 0:
+            sz=DEFAULT_TITLE_FONT_SIZE
+        return family, sz
 
 
     # Return the full pathnames of all images in the tree under rootDirectory, in sorted order
@@ -309,6 +339,12 @@ class SlideShow(tk.Tk):
         if title != self.titleText:
             self.titleText=title
             self.titleLabel.config(text=title)
+
+        fontName, fontSize=self.ResolveTitleFont(Get("Title Font", ""), Get("Title Font Size", ""))
+        if fontName != self.titleFontName or fontSize != self.titleFontSize:
+            self.titleFontName=fontName
+            self.titleFontSize=fontSize
+            self.titleLabel.config(font=(fontName, fontSize, "bold"))
 
         displaySubdirectory=Get("Display Subdirectory", "True").casefold() in ("true", "yes")
         if displaySubdirectory != self.displaySubdirectory:
