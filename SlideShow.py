@@ -129,6 +129,11 @@ class SlideShow(tk.Tk):
 
         # -------------------- The display --------------------
         self.title("SlideShow")
+        # Taskbar icon (bundled into the exe via the .spec if frozen); harmless no-op if missing or bad
+        try:
+            self.iconbitmap(os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "SlideShow.ico"))
+        except Exception:
+            pass
         self.configure(bg="black")
         self.attributes("-fullscreen", True)
 
