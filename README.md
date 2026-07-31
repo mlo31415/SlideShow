@@ -36,6 +36,9 @@ in the program's directory:
 | Display Subdirectory | Show the subdirectory chain for images below the top level | True |
 | Pause Timeout | Seconds of no user input after which a paused show resumes | 240 |
 
+A parameter value whose first non-blank character is `#` is treated as empty,
+and the parameter's default is used.
+
 The settings file is monitored while the show is running: saving a change to it
 applies just the changed parameters on the fly.  A changed Directory restarts
 the show from the new tree; any other change leaves the current image

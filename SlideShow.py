@@ -17,6 +17,9 @@ The directory to be displayed and the other operating parameters are read from
     Pause Timeout         Seconds of no user input after which a paused show
                           resumes on its own  (default: 240)
 
+A parameter value whose first non-blank character is '#' is treated as empty,
+and the parameter's default is used.
+
 An image's description is taken from a .txt file with the same name in the
 same directory (e.g., "xyz.jpg" described by "xyz.txt").  If there is none,
 the image's filename without the extension is used.
@@ -62,7 +65,10 @@ def ReadSettings(pathname: str) -> dict[str, str] | None:
             if len(line) == 0 or line.startswith("#") or "=" not in line:
                 continue
             name, _, val=line.partition("=")
-            settings[name.strip().casefold()]=val.strip()
+            val=val.strip()
+            if val.startswith("#"):
+                continue        # A commented-out value means "use the default"
+            settings[name.strip().casefold()]=val
     return settings
 
 
@@ -455,9 +461,10 @@ class SlideShow(tk.Tk):
             self.randomOrder=False
         # else: unrecognized value -- keep the current setting
 
-        # A new image source: rescan, and only if the new tree has images, switch to it
+        # A new image source: rescan, and only if the new tree has images, switch to it.
+        # (An empty or commented-out Directory quietly keeps the current one.)
         newDirectory=Get("Directory", "")
-        if os.path.normcase(newDirectory) != os.path.normcase(self.rootDirectory):
+        if len(newDirectory) > 0 and os.path.normcase(newDirectory) != os.path.normcase(self.rootDirectory):
             if not os.path.isdir(newDirectory):
                 problems.append(f"Directory='{newDirectory}' is not a directory  (keeping the current one)")
             else:
