@@ -527,6 +527,11 @@ class SlideShow(tk.Tk):
             import numpy as np
         except ImportError:
             return None
+        try:
+            # Silence a harmless OpenCV 5 console warning ("Targets are not supported by the new graph engine")
+            cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+        except AttributeError:
+            pass
         modelPath=os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), FACE_MODEL)
         if not os.path.exists(modelPath):
             return None
