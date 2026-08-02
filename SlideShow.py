@@ -26,6 +26,10 @@ the image's filename without the extension is used.
 
 Buttons: Prev, Pause, Continue, Next, Add Info, Exit.
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
+Add Info opens the Identify Photo dialog: the faces found in the photo are
+listed left-to-right, each with a box to enter the person's name, plus a box
+for general comments.  Face detection uses OpenCV's YuNet model (the .onnx
+file alongside this script).
 
 The settings file is monitored while the show is running: saving a change to it
 applies just the changed parameters on the fly (a changed Directory restarts the
@@ -33,7 +37,7 @@ show from the new tree; anything else leaves the current image undisturbed).
 Unrecognized parameter names and unusable values are reported in a warning
 dialog and ignored; missing parameters revert to their defaults.
 
-Requires: pip install Pillow
+Requires: pip install Pillow opencv-python
 """
 
 import os
@@ -44,9 +48,10 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinter import font as tkfont
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 SETTINGS_FILE="SlideShow settings.txt"
+FACE_MODEL="face_detection_yunet_2023mar.onnx"
 IMAGE_EXTENSIONS={".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 DEFAULT_TITLE_FONT="Segoe UI"
 DEFAULT_TITLE_FONT_SIZE=32
@@ -129,7 +134,8 @@ class SlideShow(tk.Tk):
         self.histpos=-1
 
         self.paused=False
-        self.dialogOpen=False           # True while the Add Info dialog is up
+        self.dialogOpen=False           # True while the Identify Photo dialog is up
+        self.photoInfo={}               # Names/comments entered via Add Info, keyed by image pathname (persistence TBD)
         self.lastInputTime=time.time()
         self.advanceAfterId=None        # Id of the pending after() call which advances to the next image
 
@@ -511,7 +517,50 @@ class SlideShow(tk.Tk):
         self.PrevImage()
         self.ScheduleAdvance()
 
-    # Open the (for now, placeholder) Add Info dialog.  While it is up the show is paused;
+    # -------------------- Identify Photo --------------------
+    # Detect the faces in a PIL image.  Returns a list of (x, y, w, h) boxes in
+    # left-to-right order, [] if there are none, or None if detection is unavailable
+    # (OpenCV not installed or the model file missing).
+    def DetectFaces(self, img: Image.Image) -> list[tuple[int, int, int, int]] | None:
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            return None
+        modelPath=os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), FACE_MODEL)
+        if not os.path.exists(modelPath):
+            return None
+        # Detect on a downscaled copy for speed, then scale the boxes back up
+        scale=1.0
+        det=img
+        if max(img.size) > 1024:
+            scale=1024/max(img.size)
+            det=img.resize((round(img.width*scale), round(img.height*scale)), Image.LANCZOS)
+        arr=cv2.cvtColor(np.array(det), cv2.COLOR_RGB2BGR)
+        detector=cv2.FaceDetectorYN.create(modelPath, "", (det.width, det.height), 0.6)
+        _, faces=detector.detect(arr)
+        if faces is None:
+            return []
+        boxes=[(max(int(f[0]/scale), 0), max(int(f[1]/scale), 0), int(f[2]/scale), int(f[3]/scale)) for f in faces]
+        boxes.sort(key=lambda b: b[0])
+        return boxes
+
+    # A round thumbnail of the face at box, for the Identify Photo table
+    @staticmethod
+    def MakeFaceThumbnail(img: Image.Image, box: tuple[int, int, int, int], size: int=72) -> ImageTk.PhotoImage:
+        x, y, w, h=box
+        cx, cy=x+w/2, y+h/2
+        r=0.65*(w*w+h*h)**0.5
+        square=img.crop((max(int(cx-r), 0), max(int(cy-r), 0), min(int(cx+r), img.width), min(int(cy+r), img.height))).resize((size, size), Image.LANCZOS)
+        mask=Image.new("L", (size, size), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, size-1, size-1), fill=255)
+        thumb=Image.new("RGB", (size, size), "black")
+        thumb.paste(square, (0, 0), mask)
+        return ImageTk.PhotoImage(thumb)
+
+    # Open the Identify Photo dialog: a table with a row for each face found in the
+    # current photo (left-to-right), each with a box for the person's name, then a box
+    # for general comments, and Save/Cancel.  While the dialog is up the show is paused;
     # when it closes, the show returns to whatever pause state it was in before.
     def OnAddInfo(self) -> None:
         wasPaused=self.paused
@@ -520,11 +569,51 @@ class SlideShow(tk.Tk):
         self.CancelAdvance()
         self.UpdateButtonStates()
 
+        pathname=self.images[self.history[self.histpos]]
+        try:
+            img=Image.open(pathname).convert("RGB")
+        except Exception:
+            img=None
+        boxes=self.DetectFaces(img) if img is not None else None
+
         dlg=tk.Toplevel(self)
-        dlg.title("Add Info")
+        dlg.title("Identify Photo")
         dlg.configure(bg="black")
-        tk.Label(dlg, text="Something Needed Here!", font=("Segoe UI", 16), fg="white", bg="black").pack(padx=40, pady=(30, 20))
-        tk.Button(dlg, text="Cancel", font=("Segoe UI", 12), width=9, command=dlg.destroy).pack(pady=(0, 20))
+
+        table=tk.Frame(dlg, bg="black")
+        table.pack(padx=30, pady=(20, 0))
+        tk.Label(table, text="", bg="black").grid(row=0, column=0)
+        tk.Label(table, text="Name", font=("Segoe UI", 12), fg="white", bg="black").grid(row=0, column=1, sticky="w")
+        dlg.thumbnails=[]               # Keep references so tk doesn't garbage-collect the images
+        nameEntries=[]
+        if boxes is None:
+            tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg="#bbbbbb", bg="black").grid(row=1, column=0, columnspan=2)
+        elif len(boxes) == 0:
+            tk.Label(table, text="(No faces detected)", font=("Segoe UI", 11), fg="#bbbbbb", bg="black").grid(row=1, column=0, columnspan=2)
+        else:
+            for i, box in enumerate(boxes):
+                thumb=self.MakeFaceThumbnail(img, box)
+                dlg.thumbnails.append(thumb)
+                tk.Label(table, image=thumb, bg="black").grid(row=i+1, column=0, padx=(0, 12), pady=4)
+                entry=tk.Entry(table, font=("Segoe UI", 12), width=32)
+                entry.grid(row=i+1, column=1, sticky="w")
+                nameEntries.append(entry)
+
+        tk.Label(dlg, text="", bg="black").pack()
+        tk.Label(dlg, text="General comments about the photo", font=("Segoe UI", 12), fg="white", bg="black").pack()
+        commentsBox=tk.Text(dlg, font=("Segoe UI", 11), width=48, height=3)
+        commentsBox.pack(padx=30, pady=(4, 0))
+
+        def OnSave() -> None:
+            # TODO: Where this should be persisted is still to be decided; for now it is kept in memory
+            self.photoInfo[pathname]={"names": [e.get().strip() for e in nameEntries], "comments": commentsBox.get("1.0", tk.END).strip()}
+            dlg.destroy()
+
+        buttons=tk.Frame(dlg, bg="black")
+        buttons.pack(pady=15)
+        tk.Button(buttons, text="Save", font=("Segoe UI", 12), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
+        tk.Button(buttons, text="Cancel", font=("Segoe UI", 12), width=9, command=dlg.destroy).pack(side=tk.LEFT, padx=8)
+
         dlg.transient(self)
         dlg.grab_set()
         # Center the dialog on the screen

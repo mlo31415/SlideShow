@@ -15,7 +15,11 @@ there is none, the image's filename without the extension is used.
 * **Pause** — stop advancing (resumes on its own after *Pause Timeout* seconds without user input)
 * **Continue** — resume advancing
 * **Next** — move to the next image
-* **Add Info** — placeholder dialog for a future feature
+* **Add Info** — opens the Identify Photo dialog: the faces found in the
+  photo are listed left-to-right, each with a box to enter the person's name,
+  plus a box for general comments about the photo.  (Face detection uses
+  OpenCV's YuNet model, the .onnx file alongside the script.  Where the
+  entered information gets saved is still to be decided.)
 * **Exit** — exits the program
 
 Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = Exit.
@@ -48,8 +52,8 @@ and otherwise ignored; missing parameters revert to their defaults.
 
 ## Requirements
 
-Python 3.10+ and Pillow:
+Python 3.10+, Pillow, and OpenCV:
 
 ```
-pip install Pillow
+pip install Pillow opencv-python
 ```
