@@ -5,9 +5,10 @@ A full-screen slideshow of the images found in a directory tree (any mix of
 
 The display shows a large title at the top, optionally the image's subdirectory
 chain under it, the image scaled to fit, and up to two lines of description
-below the image.  The description comes from a .txt file with the same name as
-the image in the same directory (e.g., `xyz.jpg` described by `xyz.txt`); if
-there is none, the image's filename without the extension is used.
+below the image.  The description comes from the `<comment>` element of an
+.xml file with the same name as the image in the same directory (e.g.,
+`xyz.jpg` described by `xyz.xml`, as exported from Piwigo); if there is none,
+the image's filename without the extension is used.
 
 ## Buttons
 

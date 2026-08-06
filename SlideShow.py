@@ -20,9 +20,10 @@ The directory to be displayed and the other operating parameters are read from
 A parameter value whose first non-blank character is '#' is treated as empty,
 and the parameter's default is used.
 
-An image's description is taken from a .txt file with the same name in the
-same directory (e.g., "xyz.jpg" described by "xyz.txt").  If there is none,
-the image's filename without the extension is used.
+An image's description is taken from the <comment> element of an .xml file
+with the same name in the same directory (e.g., "xyz.jpg" described by
+"xyz.xml", as exported from Piwigo).  If there is none, the image's filename
+without the extension is used.
 
 Buttons: Prev, Pause, Continue, Next, Add Info, Exit.
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
@@ -44,6 +45,7 @@ import os
 import sys
 import time
 import random
+import xml.etree.ElementTree as ET
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import font as tkfont
@@ -341,15 +343,14 @@ class SlideShow(tk.Tk):
                 parts.pop(0)
             self.subdirLabel.config(text="/".join(parts))
 
-        # The description: from a matching .txt file if there is one, else the filename
-        descPath=os.path.splitext(pathname)[0]+".txt"
+        # The description: the <comment> element of a matching .xml file if there is one,
+        # else the filename
+        descPath=os.path.splitext(pathname)[0]+".xml"
         desc=""
         if os.path.exists(descPath):
             try:
-                with open(descPath, "r", encoding="utf-8", errors="replace") as file:
-                    lines=[ln.strip() for ln in file.readlines() if len(ln.strip()) > 0]
-                desc="\n".join(lines[:2])
-            except OSError:
+                desc=(ET.parse(descPath).getroot().findtext("comment") or "").strip()
+            except (ET.ParseError, OSError):
                 pass
         if len(desc) == 0:
             desc=os.path.splitext(os.path.basename(pathname))[0]
