@@ -22,8 +22,9 @@ and the parameter's default is used.
 
 An image's description is taken from the <comment> element of an .xml file
 with the same name in the same directory (e.g., "xyz.jpg" described by
-"xyz.xml", as exported from Piwigo).  If there is none, the image's filename
-without the extension is used.
+"xyz.xml", as exported from Piwigo).  Failing that, a same-named .txt file
+(the older sidecar format) is used, and failing that, the image's filename
+without the extension.
 
 Buttons: Prev, Pause, Continue, Next, Add Info, Exit.
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
@@ -344,13 +345,20 @@ class SlideShow(tk.Tk):
             self.subdirLabel.config(text="/".join(parts))
 
         # The description: the <comment> element of a matching .xml file if there is one,
-        # else the filename
-        descPath=os.path.splitext(pathname)[0]+".xml"
+        # else a matching .txt file (the not-yet-converted directories), else the filename
+        base=os.path.splitext(pathname)[0]
         desc=""
-        if os.path.exists(descPath):
+        if os.path.exists(base+".xml"):
             try:
-                desc=(ET.parse(descPath).getroot().findtext("comment") or "").strip()
+                desc=(ET.parse(base+".xml").getroot().findtext("comment") or "").strip()
             except (ET.ParseError, OSError):
+                pass
+        if len(desc) == 0 and os.path.exists(base+".txt"):
+            try:
+                with open(base+".txt", "r", encoding="utf-8", errors="replace") as file:
+                    lines=[ln.strip() for ln in file.readlines() if len(ln.strip()) > 0]
+                desc="\n".join(lines[:2])
+            except OSError:
                 pass
         if len(desc) == 0:
             desc=os.path.splitext(os.path.basename(pathname))[0]
