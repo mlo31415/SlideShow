@@ -20,11 +20,10 @@ The directory to be displayed and the other operating parameters are read from
 A parameter value whose first non-blank character is '#' is treated as empty,
 and the parameter's default is used.
 
-An image's description is taken from the <comment> element of an .xml file
-with the same name in the same directory (e.g., "xyz.jpg" described by
-"xyz.xml", as exported from Piwigo).  Failing that, a same-named .txt file
-(the older sidecar format) is used, and failing that, the image's filename
-without the extension.
+Each photo comes with two same-named companion files: a .txt holding the
+caption and an .xml holding photo information from Piwigo.  The caption shown
+under the image is the .txt content; if there is none, the image's filename
+without the extension is used.
 
 Buttons: Prev, Pause, Continue, Next, Add Info, Exit.
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
@@ -46,7 +45,6 @@ import os
 import sys
 import time
 import random
-import xml.etree.ElementTree as ET
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import font as tkfont
@@ -344,16 +342,11 @@ class SlideShow(tk.Tk):
                 parts.pop(0)
             self.subdirLabel.config(text="/".join(parts))
 
-        # The description: the <comment> element of a matching .xml file if there is one,
-        # else a matching .txt file (the not-yet-converted directories), else the filename
+        # The caption: each photo comes with same-named .txt (caption) and .xml (photo
+        # info) files; the caption is the .txt content, or the filename if there is none
         base=os.path.splitext(pathname)[0]
         desc=""
-        if os.path.exists(base+".xml"):
-            try:
-                desc=(ET.parse(base+".xml").getroot().findtext("comment") or "").strip()
-            except (ET.ParseError, OSError):
-                pass
-        if len(desc) == 0 and os.path.exists(base+".txt"):
+        if os.path.exists(base+".txt"):
             try:
                 with open(base+".txt", "r", encoding="utf-8", errors="replace") as file:
                     lines=[ln.strip() for ln in file.readlines() if len(ln.strip()) > 0]

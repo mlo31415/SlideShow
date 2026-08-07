@@ -5,11 +5,10 @@ A full-screen slideshow of the images found in a directory tree (any mix of
 
 The display shows a large title at the top, optionally the image's subdirectory
 chain under it, the image scaled to fit, and up to two lines of description
-below the image.  The description comes from the `<comment>` element of an
-.xml file with the same name as the image in the same directory (e.g.,
-`xyz.jpg` described by `xyz.xml`, as exported from Piwigo).  Failing that, a
-same-named `.txt` file (the older sidecar format) is used, and failing that,
-the image's filename without the extension.
+below the image.  Each photo comes with two same-named companion files: a
+`.txt` holding the caption and an `.xml` holding photo information from
+Piwigo.  The caption shown is the `.txt` content; if there is none, the
+image's filename without the extension is used.
 
 ## Buttons
 
