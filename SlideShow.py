@@ -619,8 +619,16 @@ class SlideShow(tk.Tk):
         dlg.title("Identify Photo")
         dlg.configure(bg="black")
 
-        table=tk.Frame(dlg, bg="black")
-        table.pack(padx=30, pady=(20, 0))
+        # The face table lives in a canvas so that it can scroll when there are more
+        # faces than fit on the screen
+        tableHolder=tk.Frame(dlg, bg="black")
+        tableHolder.pack(padx=30, pady=(20, 0))
+        tableCanvas=tk.Canvas(tableHolder, bg="black", highlightthickness=0)
+        tableScrollbar=tk.Scrollbar(tableHolder, orient=tk.VERTICAL, command=tableCanvas.yview)
+        tableCanvas.configure(yscrollcommand=tableScrollbar.set)
+        tableCanvas.pack(side=tk.LEFT)
+        table=tk.Frame(tableCanvas, bg="black")
+        tableCanvas.create_window((0, 0), window=table, anchor="nw")
         tk.Label(table, text="", bg="black").grid(row=0, column=0)
         tk.Label(table, text="Name", font=("Segoe UI", 12), fg="white", bg="black").grid(row=0, column=1, sticky="w")
         dlg.thumbnails=[]               # Keep references so tk doesn't garbage-collect the images
@@ -637,6 +645,18 @@ class SlideShow(tk.Tk):
                 entry=tk.Entry(table, font=("Segoe UI", 12), width=32)
                 entry.grid(row=i+1, column=1, sticky="w")
                 nameEntries.append(entry)
+
+        # Size the canvas to the table, capped at about half the screen; when capped,
+        # add the scrollbar and mouse-wheel scrolling
+        dlg.update_idletasks()
+        tableWidth=table.winfo_reqwidth()
+        tableHeight=table.winfo_reqheight()
+        maxTableHeight=int(self.winfo_screenheight()*0.55)
+        tableCanvas.configure(width=tableWidth, height=min(tableHeight, maxTableHeight),
+                              scrollregion=(0, 0, tableWidth, tableHeight))
+        if tableHeight > maxTableHeight:
+            tableScrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            tableCanvas.bind_all("<MouseWheel>", lambda e: tableCanvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
 
         tk.Label(dlg, text="", bg="black").pack()
         tk.Label(dlg, text="General comments about the photo", font=("Segoe UI", 12), fg="white", bg="black").pack()
@@ -660,6 +680,7 @@ class SlideShow(tk.Tk):
         dlg.geometry(f"+{(self.winfo_screenwidth()-dlg.winfo_width())//2}+{(self.winfo_screenheight()-dlg.winfo_height())//2}")
         self.wait_window(dlg)
 
+        self.unbind_all("<MouseWheel>")
         self.dialogOpen=False
         self.lastInputTime=time.time()
         if wasPaused:
