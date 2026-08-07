@@ -23,7 +23,8 @@ and the parameter's default is used.
 Each photo comes with two same-named companion files: a .txt holding the
 caption and an .xml holding photo information from Piwigo.  The caption shown
 under the image is the .txt content; if there is none, the image's filename
-without the extension is used.
+without the extension is used.  A caption too long for its two lines is shown
+in a progressively smaller font until it fits.
 
 Buttons: Prev, Pause, Continue, Next, Add Info, Exit.
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
@@ -56,6 +57,9 @@ FACE_MODEL="face_detection_yunet_2023mar.onnx"
 IMAGE_EXTENSIONS={".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 DEFAULT_TITLE_FONT="Segoe UI"
 DEFAULT_TITLE_FONT_SIZE=32
+CAPTION_FONT_SIZE=22            # Normal caption size; long captions shrink from here...
+MIN_CAPTION_FONT_SIZE=12        # ...down to this, to fit the two caption lines
+CAPTION_LINES=2
 KNOWN_PARAMETERS={"directory", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout"}
 
 
@@ -182,8 +186,9 @@ class SlideShow(tk.Tk):
         self.imageLabel=tk.Label(innerFrame, bg="black")
         self.imageLabel.pack(side=tk.TOP)
 
-        self.descLabel=tk.Label(innerFrame, text="", font=("Segoe UI", 22), fg="white", bg="black",
-                                justify=tk.CENTER, height=2, wraplength=self.winfo_screenwidth()-100)
+        self.captionFont=tkfont.Font(family="Segoe UI", size=CAPTION_FONT_SIZE)
+        self.descLabel=tk.Label(innerFrame, text="", font=self.captionFont, fg="white", bg="black",
+                                justify=tk.CENTER, height=CAPTION_LINES, wraplength=self.winfo_screenwidth()-100)
         self.descLabel.pack(side=tk.TOP)
 
         self.UpdateButtonStates()
@@ -291,6 +296,25 @@ class SlideShow(tk.Tk):
         return family, sz
 
 
+    # Count the display lines 'text' will occupy in 'font' when word-wrapped to a width
+    # of 'width' pixels (mirroring tk's own wrapping).  A caption overflows the display
+    # when this exceeds CAPTION_LINES.
+    @staticmethod
+    def CountWrappedLines(text: str, font: tkfont.Font, width: int) -> int:
+        lines=0
+        for para in text.split("\n"):
+            line=""
+            for word in para.split():
+                trial=word if len(line) == 0 else line+" "+word
+                if font.measure(trial) <= width:
+                    line=trial
+                else:
+                    lines+=1
+                    line=word
+            lines+=1
+        return lines
+
+
     # Return the full pathnames of all images in the tree under rootDirectory, in sorted order
     @staticmethod
     def ScanImages(rootDirectory: str) -> list[str]:
@@ -355,6 +379,14 @@ class SlideShow(tk.Tk):
                 pass
         if len(desc) == 0:
             desc=os.path.splitext(os.path.basename(pathname))[0]
+        # A caption too long for its two lines at normal size gets a progressively
+        # smaller font until it fits (or the minimum size is reached)
+        wraplength=self.descLabel.cget("wraplength")
+        size=CAPTION_FONT_SIZE
+        self.captionFont.configure(size=size)
+        while size > MIN_CAPTION_FONT_SIZE and self.CountWrappedLines(desc, self.captionFont, wraplength) > CAPTION_LINES:
+            size-=2
+            self.captionFont.configure(size=size)
         self.descLabel.config(text=desc)
 
         # The image itself, scaled to fit the space left over after the caption below it

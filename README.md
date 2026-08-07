@@ -8,7 +8,8 @@ chain under it, the image scaled to fit, and up to two lines of description
 below the image.  Each photo comes with two same-named companion files: a
 `.txt` holding the caption and an `.xml` holding photo information from
 Piwigo.  The caption shown is the `.txt` content; if there is none, the
-image's filename without the extension is used.
+image's filename without the extension is used.  A caption too long for its
+two lines is shown in a progressively smaller font until it fits.
 
 ## Buttons
 
