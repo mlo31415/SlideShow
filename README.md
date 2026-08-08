@@ -49,6 +49,7 @@ in the program's directory:
 | Title Font Size | Point size for the title | 32 |
 | Display Subdirectory | Show the subdirectory chain for images below the top level | True |
 | Pause Timeout | Seconds of no user input after which a paused show resumes | 240 |
+| Mode | `Dark` or `Light` color scheme | Dark |
 
 A parameter value whose first non-blank character is `#` is treated as empty,
 and the parameter's default is used.

@@ -23,6 +23,7 @@ The directory to be displayed and the other operating parameters are read from
                           for images not in the top-level directory  (default: True)
     Pause Timeout         Seconds of no user input after which a paused show
                           resumes on its own  (default: 240)
+    Mode                  "Dark" or "Light" color scheme  (default: Dark)
 
 A parameter value whose first non-blank character is '#' is treated as empty,
 and the parameter's default is used.
@@ -76,7 +77,15 @@ DEFAULT_TITLE_FONT_SIZE=32
 CAPTION_FONT_SIZE=22            # Normal caption size; long captions shrink from here...
 MIN_CAPTION_FONT_SIZE=12        # ...down to this, to fit the two caption lines
 CAPTION_LINES=2
-KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout"}
+KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode"}
+
+# The color schemes for the Mode parameter (default: dark)
+THEMES={
+    "dark":  {"bg": "black", "fg": "white", "titleFg": "lightyellow", "subdirFg": "#bbbbbb",
+              "barBg": "#202020", "barFg": "white", "barActiveBg": "#3a3a3a", "panelBg": "#101010"},
+    "light": {"bg": "white", "fg": "black", "titleFg": "darkgoldenrod", "subdirFg": "#555555",
+              "barBg": "#e4e4e4", "barFg": "black", "barActiveBg": "#d0d0d0", "panelBg": "#efefef"},
+}
 
 
 # Read a settings file of name=value lines.  Blank lines and lines starting with '#' are ignored.
@@ -142,6 +151,7 @@ class SlideShow(tk.Tk):
             self.displayTime=10.0
         self.titleText=Get("Title", "photos.fanac.org")
         self.titleFontName, self.titleFontSize=self.ResolveTitleFont(Get("Title Font", ""), Get("Title Font Size", ""))
+        self.theme=THEMES.get(Get("Mode", "Dark").casefold(), THEMES["dark"])
         self.displaySubdirectory=IsTrue("Display Subdirectory", "True")
         try:
             self.pauseTimeout=float(Get("Pause Timeout", "240"))
@@ -236,7 +246,7 @@ class SlideShow(tk.Tk):
 
         # Bottom-up within the slideshow section: buttons at the very bottom,
         # description just above them, image fills the rest.
-        buttonFrame=tk.Frame(self.showFrame, bg="black")
+        buttonFrame=self.buttonFrame=tk.Frame(self.showFrame, bg="black")
         buttonFrame.pack(side=tk.BOTTOM, pady=(5, 15))
 
         # Every button carries an image (a transparent spacer when it has no icon) so
@@ -258,7 +268,7 @@ class SlideShow(tk.Tk):
         # remaining space, so the caption sits directly below the image and moves with it.
         self.centerFrame=tk.Frame(self.showFrame, bg="black")
         self.centerFrame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        innerFrame=tk.Frame(self.centerFrame, bg="black")
+        innerFrame=self.innerFrame=tk.Frame(self.centerFrame, bg="black")
         innerFrame.pack(expand=True)
 
         self.imageLabel=tk.Label(innerFrame, bg="black")
@@ -269,6 +279,7 @@ class SlideShow(tk.Tk):
                                 justify=tk.CENTER, height=CAPTION_LINES, wraplength=self.winfo_screenwidth()-100)
         self.descLabel.pack(side=tk.TOP)
 
+        self.ApplyTheme()
         self.UpdateButtonStates()
 
         # Any user input resets the pause-timeout clock
@@ -281,6 +292,21 @@ class SlideShow(tk.Tk):
 
         # Let the window get its real size before displaying the first image
         self.after(100, self.Start)
+
+
+    # Apply the current theme's colors to all the permanent widgets.  (The Identify
+    # Photo panel picks up the theme when it is next opened.)
+    def ApplyTheme(self) -> None:
+        t=self.theme
+        self.configure(bg=t["bg"])
+        for w in (self.showFrame, self.buttonFrame, self.centerFrame, self.innerFrame, self.imageLabel):
+            w.configure(bg=t["bg"])
+        self.titleLabel.configure(bg=t["bg"], fg=t["titleFg"])
+        self.subdirLabel.configure(bg=t["bg"], fg=t["subdirFg"])
+        self.descLabel.configure(bg=t["bg"], fg=t["fg"])
+        self.topBar.configure(bg=t["barBg"])
+        self.closeButton.configure(bg=t["barBg"], fg=t["barFg"], activebackground="#C42B1C", activeforeground="white")
+        self.showMenuButton.configure(bg=t["barBg"], fg=t["barFg"], activebackground=t["barActiveBg"], activeforeground=t["barFg"])
 
 
     def Fatal(self, msg: str) -> None:
@@ -321,6 +347,9 @@ class SlideShow(tk.Tk):
 
         if "display subdirectory" in settings and settings["display subdirectory"].casefold() not in ("true", "yes", "false", "no"):
             problems.append(f"Display Subdirectory='{settings['display subdirectory']}' should be True or False  (ignoring it)")
+
+        if "mode" in settings and settings["mode"].casefold() not in THEMES:
+            problems.append(f"Mode='{settings['mode']}' should be Dark or Light  (ignoring it)")
 
         fontName=settings.get("title font", "").strip()
         if len(fontName) > 0 and self.FindFontFamily(fontName) is None:
@@ -666,6 +695,11 @@ class SlideShow(tk.Tk):
         if pauseTimeout > 0:
             self.pauseTimeout=pauseTimeout
 
+        mode=Get("Mode", "Dark").casefold()
+        if mode in THEMES and THEMES[mode] is not self.theme:
+            self.theme=THEMES[mode]
+            self.ApplyTheme()
+
         order=Get("Order", "Sequential").casefold()
         if order.startswith("random"):
             self.randomOrder=True
@@ -804,14 +838,14 @@ class SlideShow(tk.Tk):
 
     # A round thumbnail of the face at box, for the Identify Photo table
     @staticmethod
-    def MakeFaceThumbnail(img: Image.Image, box: tuple[int, int, int, int], size: int=72) -> ImageTk.PhotoImage:
+    def MakeFaceThumbnail(img: Image.Image, box: tuple[int, int, int, int], bg: str, size: int=72) -> ImageTk.PhotoImage:
         x, y, w, h=box
         cx, cy=x+w/2, y+h/2
         r=0.65*(w*w+h*h)**0.5
         square=img.crop((max(int(cx-r), 0), max(int(cy-r), 0), min(int(cx+r), img.width), min(int(cy+r), img.height))).resize((size, size), Image.LANCZOS)
         mask=Image.new("L", (size, size), 0)
         ImageDraw.Draw(mask).ellipse((0, 0, size-1, size-1), fill=255)
-        thumb=Image.new("RGB", (size, size), "black")
+        thumb=Image.new("RGB", (size, size), bg)
         thumb.paste(square, (0, 0), mask)
         return ImageTk.PhotoImage(thumb)
 
@@ -841,9 +875,13 @@ class SlideShow(tk.Tk):
             img=None
         boxes=self.DetectFaces(img) if img is not None else None
 
+        pbg=self.theme["panelBg"]
+        pfg=self.theme["fg"]
+        pdim=self.theme["subdirFg"]
+
         # Split using the window's own dimensions (not the primary screen's -- the
         # window may have been dragged to a different-sized or rotated monitor)
-        panel=tk.Frame(self, bg="#101010")
+        panel=tk.Frame(self, bg=pbg)
         self.identifyPanel=panel
         windowWidth=self.winfo_width()
         windowHeight=self.winfo_height()
@@ -860,31 +898,31 @@ class SlideShow(tk.Tk):
         panelHeight=panel.winfo_height()        # The panel's real height (it starts below the title area)
         self.ShowImage()                # Rescale the photo into its reduced half
 
-        tk.Label(panel, text="Identify Photo", font=("Segoe UI", 18, "bold"), fg="white", bg="#101010").pack(pady=(20, 5))
+        tk.Label(panel, text="Identify Photo", font=("Segoe UI", 18, "bold"), fg=pfg, bg=pbg).pack(pady=(20, 5))
 
         # The face table lives in a canvas so that it can scroll when there are more
         # faces than fit in the panel
-        tableHolder=tk.Frame(panel, bg="#101010")
+        tableHolder=tk.Frame(panel, bg=pbg)
         tableHolder.pack(pady=(5, 0))
-        tableCanvas=tk.Canvas(tableHolder, bg="#101010", highlightthickness=0)
+        tableCanvas=tk.Canvas(tableHolder, bg=pbg, highlightthickness=0)
         tableScrollbar=tk.Scrollbar(tableHolder, orient=tk.VERTICAL, command=tableCanvas.yview)
         tableCanvas.configure(yscrollcommand=tableScrollbar.set)
         tableCanvas.pack(side=tk.LEFT)
-        table=tk.Frame(tableCanvas, bg="#101010")
+        table=tk.Frame(tableCanvas, bg=pbg)
         tableCanvas.create_window((0, 0), window=table, anchor="nw")
-        tk.Label(table, text="", bg="#101010").grid(row=0, column=0)
-        tk.Label(table, text="Name", font=("Segoe UI", 12), fg="white", bg="#101010").grid(row=0, column=1, sticky="w")
+        tk.Label(table, text="", bg=pbg).grid(row=0, column=0)
+        tk.Label(table, text="Name", font=("Segoe UI", 12), fg=pfg, bg=pbg).grid(row=0, column=1, sticky="w")
         panel.thumbnails=[]             # Keep references so tk doesn't garbage-collect the images
         nameEntries=[]
         if boxes is None:
-            tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg="#bbbbbb", bg="#101010").grid(row=1, column=0, columnspan=2)
+            tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=2)
         elif len(boxes) == 0:
-            tk.Label(table, text="(No faces detected)", font=("Segoe UI", 11), fg="#bbbbbb", bg="#101010").grid(row=1, column=0, columnspan=2)
+            tk.Label(table, text="(No faces detected)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=2)
         else:
             for i, box in enumerate(boxes):
-                thumb=self.MakeFaceThumbnail(img, box)
+                thumb=self.MakeFaceThumbnail(img, box, pbg)
                 panel.thumbnails.append(thumb)
-                tk.Label(table, image=thumb, bg="#101010").grid(row=i+1, column=0, padx=(0, 12), pady=4)
+                tk.Label(table, image=thumb, bg=pbg).grid(row=i+1, column=0, padx=(0, 12), pady=4)
                 entry=tk.Entry(table, font=("Segoe UI", 12), width=32)
                 entry.grid(row=i+1, column=1, sticky="w")
                 nameEntries.append(entry)
@@ -901,8 +939,8 @@ class SlideShow(tk.Tk):
             tableScrollbar.pack(side=tk.RIGHT, fill=tk.Y)
             tableCanvas.bind_all("<MouseWheel>", lambda e: tableCanvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
 
-        tk.Label(panel, text="", bg="#101010").pack()
-        tk.Label(panel, text="General comments about the photo", font=("Segoe UI", 12), fg="white", bg="#101010").pack()
+        tk.Label(panel, text="", bg=pbg).pack()
+        tk.Label(panel, text="General comments about the photo", font=("Segoe UI", 12), fg=pfg, bg=pbg).pack()
         commentsBox=tk.Text(panel, font=("Segoe UI", 11), width=48, height=3)
         commentsBox.pack(pady=(4, 0))
 
@@ -926,7 +964,7 @@ class SlideShow(tk.Tk):
             self.photoInfo[pathname]={"names": [e.get().strip() for e in nameEntries], "comments": commentsBox.get("1.0", tk.END).strip()}
             Close()
 
-        buttons=tk.Frame(panel, bg="#101010")
+        buttons=tk.Frame(panel, bg=pbg)
         buttons.pack(pady=15)
         tk.Button(buttons, text="Save", font=("Segoe UI", 12), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
         tk.Button(buttons, text="Cancel", font=("Segoe UI", 12), width=9, command=Close).pack(side=tk.LEFT, padx=8)
