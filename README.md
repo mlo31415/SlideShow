@@ -24,8 +24,10 @@ two lines is shown in a progressively smaller font until it fits.
   OpenCV's YuNet model, the .onnx file alongside the script.  Where the
   entered information gets saved is still to be decided.)
 
-A top bar across the top of the screen holds a **✕** close box in the
-upper-right corner (and has room for future menu items).
+A top bar across the top of the screen holds the **Select Photo Show** menu at
+the left — one radio-checked entry per listed directory (directory names only);
+picking one switches the show to that tree — and a **✕** close box in the
+upper-right corner.
 
 Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = exit.
 
@@ -36,7 +38,7 @@ in the program's directory:
 
 | Name | Meaning | Default |
 |------|---------|---------|
-| Directories: | Starts a list of directory paths, one per line, each the root of a tree of images to display; the list ends at the first line which is not a valid directory path | *(at least one required)* |
+| Directories: | Starts a list of directory paths, one per line, each the root of a tree of images — an available photo show; the list ends at the first line which is not a valid directory path.  The first is shown at startup | *(at least one required)* |
 | Order | `Sequential` or `Random` | Sequential |
 | Display Time | Seconds each image is shown | 10 |
 | Title | Title shown at the top | photos.fanac.org |

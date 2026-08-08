@@ -7,9 +7,11 @@ The directory to be displayed and the other operating parameters are read from
 "SlideShow settings.txt" (name=value lines) in the program's directory:
 
     Directories:          Starts a list of directory paths, one per line, each the root
-                          of a tree of images to display.  The list ends at the first
-                          line which is not a valid directory path.  At least one
-                          directory is required.
+                          of a tree of images -- an available "photo show".  The list
+                          ends at the first line which is not a valid directory path.
+                          At least one directory is required.  The first is shown at
+                          startup; the Select Photo Show menu in the top bar switches
+                          between them.
     Order                 "Sequential" or "Random"  (default: Sequential)
     Display Time          Seconds each image is displayed  (default: 10)
     Title                 Title shown at the top  (default: "photos.fanac.org")
@@ -150,9 +152,12 @@ class SlideShow(tk.Tk):
         self.pendingSettings=None       # Newly-read settings awaiting a second identical read (debounce)
 
         # -------------------- Find the images --------------------
-        self.images=self.ScanImages(self.rootDirectories)
+        # The listed directories are the available photo shows; one is active at a time,
+        # initially the first.  The Select Photo Show menu switches between them.
+        self.currentDirIndex=0
+        self.images=self.ScanImages([self.rootDirectories[0]])
         if len(self.images) == 0:
-            self.Fatal(f"No image files found under {', '.join(self.rootDirectories)}.")
+            self.Fatal(f"No image files found under '{self.rootDirectories[0]}'.")
 
         # History of images shown (indexes into self.images), so Prev can back up even in random order.
         self.history: list[int]=[]
@@ -174,13 +179,23 @@ class SlideShow(tk.Tk):
         self.configure(bg="black")
         self.attributes("-fullscreen", True)
 
-        # Top bar: a place for future menu items, with a close box at the right end
+        # Top bar: menu items at the left, with a close box at the right end
         self.topBar=tk.Frame(self, bg="#202020")
         self.topBar.pack(side=tk.TOP, fill=tk.X)
         self.closeButton=tk.Button(self.topBar, text="  ✕  ", command=self.destroy, font=("Segoe UI", 12),
                                    fg="white", bg="#202020", activebackground="#C42B1C", activeforeground="white",
                                    relief=tk.FLAT, bd=0)
         self.closeButton.pack(side=tk.RIGHT)
+
+        # The Select Photo Show menu: one radio-checked entry per listed directory
+        self.showMenuButton=tk.Menubutton(self.topBar, text="Select Photo Show", font=("Segoe UI", 11),
+                                          fg="white", bg="#202020", activebackground="#3a3a3a", activeforeground="white",
+                                          relief=tk.FLAT)
+        self.showMenu=tk.Menu(self.showMenuButton, tearoff=False)
+        self.showMenuButton.config(menu=self.showMenu)
+        self.showMenuButton.pack(side=tk.LEFT, padx=6)
+        self.selectedShowVar=tk.IntVar(value=self.currentDirIndex)
+        self.RebuildShowMenu()
 
         self.titleLabel=tk.Label(self, text=self.titleText, font=(self.titleFontName, self.titleFontSize, "bold"), fg="lightyellow", bg="black")
         self.titleLabel.pack(side=tk.TOP, pady=(10, 0))
@@ -327,6 +342,31 @@ class SlideShow(tk.Tk):
         return family, sz
 
 
+    # Rebuild the Select Photo Show menu from the current directory list.  Entries show
+    # just the directory names; the active one is checked.
+    def RebuildShowMenu(self) -> None:
+        self.showMenu.delete(0, tk.END)
+        for i, d in enumerate(self.rootDirectories):
+            self.showMenu.add_radiobutton(label=os.path.basename(d.rstrip("\\/")) or d,
+                                          variable=self.selectedShowVar, value=i, command=self.OnSelectShow)
+
+    # Switch the show to the directory picked from the menu
+    def OnSelectShow(self) -> None:
+        index=self.selectedShowVar.get()
+        if index == self.currentDirIndex:
+            return
+        images=self.ScanImages([self.rootDirectories[index]])
+        if len(images) == 0:
+            self.selectedShowVar.set(self.currentDirIndex)      # Revert the check
+            self.ShowSettingsProblems([f"'{os.path.basename(self.rootDirectories[index])}' contains no images  (keeping the current show)"])
+            return
+        self.currentDirIndex=index
+        self.images=images
+        self.history=[]
+        self.histpos=-1
+        self.NextImage()
+        self.ScheduleAdvance()
+
     # Count the display lines 'text' will occupy in 'font' when word-wrapped to a width
     # of 'width' pixels (mirroring tk's own wrapping).  A caption overflows the display
     # when this exceeds CAPTION_LINES.
@@ -386,15 +426,9 @@ class SlideShow(tk.Tk):
     def ShowImage(self) -> None:
         pathname=self.images[self.history[self.histpos]]
 
-        # The optional subdirectory line: the path below the listed directory the image
-        # came from, so photos in that directory itself show nothing, and deeper ones
-        # show e.g. "A" or "A/B"
-        subdir="."
-        for root in self.rootDirectories:
-            rel=os.path.relpath(os.path.dirname(pathname), root)
-            if not rel.startswith(".."):
-                subdir=rel
-                break
+        # The optional subdirectory line: the path below the active show's directory, so
+        # photos in that directory itself show nothing, and deeper ones show e.g. "A" or "A/B"
+        subdir=os.path.relpath(os.path.dirname(pathname), self.rootDirectories[self.currentDirIndex])
         if not self.displaySubdirectory or subdir == ".":
             self.subdirLabel.config(text="")
         else:
@@ -540,22 +574,32 @@ class SlideShow(tk.Tk):
             self.randomOrder=False
         # else: unrecognized value -- keep the current setting
 
-        # A new directory list: rescan, and only if the new trees have images, switch to
-        # them.  (Paths in the list are valid directories by construction of the parse.)
+        # A new directory list: if the active show's directory is still in the list, keep
+        # showing it undisturbed; otherwise switch to the first directory of the new list.
+        # (Paths in the list are valid directories by construction of the parse.)
         newDirectories=settings.get("directories", [])
         if len(newDirectories) == 0:
             problems.append("No directory paths are defined  (keeping the current list)")
         elif [os.path.normcase(d) for d in newDirectories] != [os.path.normcase(d) for d in self.rootDirectories]:
-            images=self.ScanImages(newDirectories)
-            if len(images) == 0:
-                problems.append(f"No image files found under {', '.join(newDirectories)}  (keeping the current list)")
-            else:
+            current=os.path.normcase(self.rootDirectories[self.currentDirIndex])
+            newIndex=next((i for i, d in enumerate(newDirectories) if os.path.normcase(d) == current), None)
+            if newIndex is not None:
                 self.rootDirectories=newDirectories
+                self.currentDirIndex=newIndex
+            else:
+                images=self.ScanImages([newDirectories[0]])
+                if len(images) == 0:
+                    problems.append(f"No image files found under '{newDirectories[0]}'  (keeping the current list)")
+                    return problems
+                self.rootDirectories=newDirectories
+                self.currentDirIndex=0
                 self.images=images
                 self.history=[]
                 self.histpos=-1
                 self.NextImage()
                 self.ScheduleAdvance()
+            self.selectedShowVar.set(self.currentDirIndex)
+            self.RebuildShowMenu()
 
         return problems
 
