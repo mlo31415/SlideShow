@@ -184,13 +184,13 @@ class SlideShow(tk.Tk):
         buttonFrame.pack(side=tk.BOTTOM, pady=(5, 15))
 
         def MakeButton(text: str, command) -> tk.Button:
-            b=tk.Button(buttonFrame, text=text, command=command, font=("Segoe UI", 12), width=9)
+            b=tk.Button(buttonFrame, text=text, command=command, font=("Segoe UI", 12), width=11)
             b.pack(side=tk.LEFT, padx=8)
             return b
 
-        self.prevButton=MakeButton("Prev", self.OnPrev)
-        self.pauseButton=MakeButton("Pause", self.OnPauseContinue)       # Toggles between Pause and Continue
-        self.nextButton=MakeButton("Next", self.OnNext)
+        self.prevButton=MakeButton("⏮ Prev", self.OnPrev)
+        self.pauseButton=MakeButton("⏸ Pause", self.OnPauseContinue)       # Toggles between Pause and Continue
+        self.nextButton=MakeButton("⏭ Next", self.OnNext)
         self.addInfoButton=MakeButton("Add Info", self.OnAddInfo)
         self.exitButton=MakeButton("Exit", self.destroy)
 
@@ -553,7 +553,7 @@ class SlideShow(tk.Tk):
 
     # The one Pause/Continue button shows the action it will perform next
     def UpdateButtonStates(self) -> None:
-        self.pauseButton.config(text="Continue" if self.paused else "Pause")
+        self.pauseButton.config(text="▶ Continue" if self.paused else "⏸ Pause")
 
     def OnPauseContinue(self) -> None:
         if self.paused:
