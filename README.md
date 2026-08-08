@@ -38,7 +38,7 @@ in the program's directory:
 
 | Name | Meaning | Default |
 |------|---------|---------|
-| Directories: | Starts a list of directory paths, one per line, each the root of a tree of images — an available photo show; the list ends at the first line which is not a valid directory path.  The first is shown at startup | *(at least one required)* |
+| Directories: | Starts a list of directory paths, one per line, each the root of a tree of images — an available photo show; the list ends at the first line which is not a valid directory path.  The show selected last time (remembered in `SlideShow state.json`) is reopened at startup if its directory is still listed, else the first is used | *(at least one required)* |
 | Order | `Sequential` or `Random` | Sequential |
 | Display Time | Seconds each image is shown | 10 |
 | Title | Title shown at the top | photos.fanac.org |

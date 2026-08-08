@@ -9,8 +9,10 @@ The directory to be displayed and the other operating parameters are read from
     Directories:          Starts a list of directory paths, one per line, each the root
                           of a tree of images -- an available "photo show".  The list
                           ends at the first line which is not a valid directory path.
-                          At least one directory is required.  The first is shown at
-                          startup; the Select Photo Show menu in the top bar switches
+                          At least one directory is required.  The show selected last
+                          time (remembered in "SlideShow state.json") is reopened at
+                          startup if its directory is still listed, else the first is
+                          used; the Select Photo Show menu in the top bar switches
                           between them.
     Order                 "Sequential" or "Random"  (default: Sequential)
     Display Time          Seconds each image is displayed  (default: 10)
@@ -51,6 +53,7 @@ Requires: pip install Pillow opencv-python
 
 import os
 import sys
+import json
 import time
 import random
 from typing import Any
@@ -61,6 +64,7 @@ from tkinter import font as tkfont
 from PIL import Image, ImageDraw, ImageTk
 
 SETTINGS_FILE="SlideShow settings.txt"
+STATE_FILE="SlideShow state.json"
 FACE_MODEL="face_detection_yunet_2023mar.onnx"
 IMAGE_EXTENSIONS={".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 DEFAULT_TITLE_FONT="Segoe UI"
@@ -152,12 +156,21 @@ class SlideShow(tk.Tk):
         self.pendingSettings=None       # Newly-read settings awaiting a second identical read (debounce)
 
         # -------------------- Find the images --------------------
-        # The listed directories are the available photo shows; one is active at a time,
-        # initially the first.  The Select Photo Show menu switches between them.
+        # The listed directories are the available photo shows; one is active at a time.
+        # The show selected last time is reopened if its directory is still in the list;
+        # otherwise the first directory is used.  The Select Photo Show menu switches.
+        self.statePath=os.path.join(os.path.dirname(os.path.abspath(__file__)), STATE_FILE)
         self.currentDirIndex=0
-        self.images=self.ScanImages([self.rootDirectories[0]])
+        try:
+            with open(self.statePath, "r", encoding="utf-8") as file:
+                saved=json.load(file).get("current directory", "")
+            self.currentDirIndex=next((i for i, d in enumerate(self.rootDirectories)
+                                       if os.path.normcase(d) == os.path.normcase(saved)), 0)
+        except (OSError, json.JSONDecodeError):
+            pass
+        self.images=self.ScanImages([self.rootDirectories[self.currentDirIndex]])
         if len(self.images) == 0:
-            self.Fatal(f"No image files found under '{self.rootDirectories[0]}'.")
+            self.Fatal(f"No image files found under '{self.rootDirectories[self.currentDirIndex]}'.")
 
         # History of images shown (indexes into self.images), so Prev can back up even in random order.
         self.history: list[int]=[]
@@ -350,6 +363,14 @@ class SlideShow(tk.Tk):
             self.showMenu.add_radiobutton(label=os.path.basename(d.rstrip("\\/")) or d,
                                           variable=self.selectedShowVar, value=i, command=self.OnSelectShow)
 
+    # Remember the selected show's directory between invocations
+    def SaveState(self) -> None:
+        try:
+            with open(self.statePath, "w", encoding="utf-8") as file:
+                json.dump({"current directory": self.rootDirectories[self.currentDirIndex]}, file)
+        except OSError:
+            pass
+
     # Switch the show to the directory picked from the menu
     def OnSelectShow(self) -> None:
         index=self.selectedShowVar.get()
@@ -366,6 +387,7 @@ class SlideShow(tk.Tk):
         self.histpos=-1
         self.NextImage()
         self.ScheduleAdvance()
+        self.SaveState()
 
     # Count the display lines 'text' will occupy in 'font' when word-wrapped to a width
     # of 'width' pixels (mirroring tk's own wrapping).  A caption overflows the display
@@ -600,6 +622,7 @@ class SlideShow(tk.Tk):
                 self.ScheduleAdvance()
             self.selectedShowVar.set(self.currentDirIndex)
             self.RebuildShowMenu()
+            self.SaveState()
 
         return problems
 

@@ -16,3 +16,6 @@ dist/
 
 # Runtime logs
 *.log
+
+# Runtime / per-user state
+SlideShow state.json
