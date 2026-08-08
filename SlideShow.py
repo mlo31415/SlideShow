@@ -6,7 +6,10 @@ Displays a full-screen slideshow of the images found in a directory tree.
 The directory to be displayed and the other operating parameters are read from
 "SlideShow settings.txt" (name=value lines) in the program's directory:
 
-    Directory             Path of the directory tree holding the images
+    Directories:          Starts a list of directory paths, one per line, each the root
+                          of a tree of images to display.  The list ends at the first
+                          line which is not a valid directory path.  At least one
+                          directory is required.
     Order                 "Sequential" or "Random"  (default: Sequential)
     Display Time          Seconds each image is displayed  (default: 10)
     Title                 Title shown at the top  (default: "photos.fanac.org")
@@ -46,6 +49,7 @@ import os
 import sys
 import time
 import random
+from typing import Any
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import font as tkfont
@@ -60,19 +64,33 @@ DEFAULT_TITLE_FONT_SIZE=32
 CAPTION_FONT_SIZE=22            # Normal caption size; long captions shrink from here...
 MIN_CAPTION_FONT_SIZE=12        # ...down to this, to fit the two caption lines
 CAPTION_LINES=2
-KNOWN_PARAMETERS={"directory", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout"}
+KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout"}
 
 
 # Read a settings file of name=value lines.  Blank lines and lines starting with '#' are ignored.
 # Names are matched case-insensitive.
-def ReadSettings(pathname: str) -> dict[str, str] | None:
+# A "Directories:" line starts a list of directory paths, one per line, ending at the first
+# line which is not a valid directory path; the list is stored under the key "directories".
+def ReadSettings(pathname: str) -> dict[str, Any] | None:
     if not os.path.exists(pathname):
         return None
     settings={}
+    inDirectories=False
     with open(pathname, "r", encoding="utf-8") as file:
         for line in file:
             line=line.strip()
-            if len(line) == 0 or line.startswith("#") or "=" not in line:
+            if len(line) == 0 or line.startswith("#"):
+                continue
+            if inDirectories:
+                if os.path.isdir(line):
+                    settings["directories"].append(line)
+                    continue
+                inDirectories=False     # Not a valid directory -- the list ends; process the line normally
+            if line.casefold() == "directories:":
+                inDirectories=True
+                settings.setdefault("directories", [])
+                continue
+            if "=" not in line:
                 continue
             name, _, val=line.partition("=")
             val=val.strip()
@@ -102,7 +120,7 @@ class SlideShow(tk.Tk):
 
         self.startupProblems=self.ValidateSettings(settings)       # Reported once the show is up
 
-        self.rootDirectory=Get("Directory", "")
+        self.rootDirectories=settings.get("directories", [])
         self.randomOrder=Get("Order", "Sequential").casefold().startswith("random")
         try:
             self.displayTime=float(Get("Display Time", "10"))
@@ -120,8 +138,8 @@ class SlideShow(tk.Tk):
         if self.pauseTimeout <= 0:
             self.pauseTimeout=240.0
 
-        if len(self.rootDirectory) == 0 or not os.path.isdir(self.rootDirectory):
-            self.Fatal(f"The Directory setting ('{self.rootDirectory}') is missing or is not a directory.\n\nEdit '{settingsPath}' to point to a directory of images.")
+        if len(self.rootDirectories) == 0:
+            self.Fatal(f"No directory paths are defined in '{settingsPath}'.\n\nThe settings file needs a 'Directories:' line followed by at least one existing directory path.")
 
         # The settings file is monitored while running: changes to it are applied on the
         # fly, each parameter taking effect only if its value actually changed.
@@ -130,9 +148,9 @@ class SlideShow(tk.Tk):
         self.pendingSettings=None       # Newly-read settings awaiting a second identical read (debounce)
 
         # -------------------- Find the images --------------------
-        self.images=self.ScanImages(self.rootDirectory)
+        self.images=self.ScanImages(self.rootDirectories)
         if len(self.images) == 0:
-            self.Fatal(f"No image files found under '{self.rootDirectory}'.")
+            self.Fatal(f"No image files found under {', '.join(self.rootDirectories)}.")
 
         # History of images shown (indexes into self.images), so Prev can back up even in random order.
         self.history: list[int]=[]
@@ -315,15 +333,17 @@ class SlideShow(tk.Tk):
         return lines
 
 
-    # Return the full pathnames of all images in the tree under rootDirectory, in sorted order
+    # Return the full pathnames of all images in the trees under the listed directories,
+    # in sorted order within each directory, directories in the order listed
     @staticmethod
-    def ScanImages(rootDirectory: str) -> list[str]:
+    def ScanImages(rootDirectories: list[str]) -> list[str]:
         images=[]
-        for dirpath, dirnames, filenames in os.walk(rootDirectory):
-            dirnames.sort(key=str.casefold)
-            for fname in sorted(filenames, key=str.casefold):
-                if os.path.splitext(fname)[1].casefold() in IMAGE_EXTENSIONS:
-                    images.append(os.path.join(dirpath, fname))
+        for rootDirectory in rootDirectories:
+            for dirpath, dirnames, filenames in os.walk(rootDirectory):
+                dirnames.sort(key=str.casefold)
+                for fname in sorted(filenames, key=str.casefold):
+                    if os.path.splitext(fname)[1].casefold() in IMAGE_EXTENSIONS:
+                        images.append(os.path.join(dirpath, fname))
         return images
 
 
@@ -353,9 +373,15 @@ class SlideShow(tk.Tk):
     def ShowImage(self) -> None:
         pathname=self.images[self.history[self.histpos]]
 
-        # The optional subdirectory line: the path below the root directory, so photos in
-        # the root itself show nothing, and deeper ones show e.g. "A" or "A/B"
-        subdir=os.path.relpath(os.path.dirname(pathname), self.rootDirectory)
+        # The optional subdirectory line: the path below the listed directory the image
+        # came from, so photos in that directory itself show nothing, and deeper ones
+        # show e.g. "A" or "A/B"
+        subdir="."
+        for root in self.rootDirectories:
+            rel=os.path.relpath(os.path.dirname(pathname), root)
+            if not rel.startswith(".."):
+                subdir=rel
+                break
         if not self.displaySubdirectory or subdir == ".":
             self.subdirLabel.config(text="")
         else:
@@ -501,23 +527,22 @@ class SlideShow(tk.Tk):
             self.randomOrder=False
         # else: unrecognized value -- keep the current setting
 
-        # A new image source: rescan, and only if the new tree has images, switch to it.
-        # (An empty or commented-out Directory quietly keeps the current one.)
-        newDirectory=Get("Directory", "")
-        if len(newDirectory) > 0 and os.path.normcase(newDirectory) != os.path.normcase(self.rootDirectory):
-            if not os.path.isdir(newDirectory):
-                problems.append(f"Directory='{newDirectory}' is not a directory  (keeping the current one)")
+        # A new directory list: rescan, and only if the new trees have images, switch to
+        # them.  (Paths in the list are valid directories by construction of the parse.)
+        newDirectories=settings.get("directories", [])
+        if len(newDirectories) == 0:
+            problems.append("No directory paths are defined  (keeping the current list)")
+        elif [os.path.normcase(d) for d in newDirectories] != [os.path.normcase(d) for d in self.rootDirectories]:
+            images=self.ScanImages(newDirectories)
+            if len(images) == 0:
+                problems.append(f"No image files found under {', '.join(newDirectories)}  (keeping the current list)")
             else:
-                images=self.ScanImages(newDirectory)
-                if len(images) == 0:
-                    problems.append(f"Directory='{newDirectory}' contains no images  (keeping the current one)")
-                else:
-                    self.rootDirectory=newDirectory
-                    self.images=images
-                    self.history=[]
-                    self.histpos=-1
-                    self.NextImage()
-                    self.ScheduleAdvance()
+                self.rootDirectories=newDirectories
+                self.images=images
+                self.history=[]
+                self.histpos=-1
+                self.NextImage()
+                self.ScheduleAdvance()
 
         return problems
 

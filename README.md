@@ -33,7 +33,7 @@ in the program's directory:
 
 | Name | Meaning | Default |
 |------|---------|---------|
-| Directory | Root of the tree of images to display | *(required)* |
+| Directories: | Starts a list of directory paths, one per line, each the root of a tree of images to display; the list ends at the first line which is not a valid directory path | *(at least one required)* |
 | Order | `Sequential` or `Random` | Sequential |
 | Display Time | Seconds each image is shown | 10 |
 | Title | Title shown at the top | photos.fanac.org |
