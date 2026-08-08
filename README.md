@@ -14,8 +14,9 @@ two lines is shown in a progressively smaller font until it fits.
 ## Buttons
 
 * **Prev** — move to the previous image shown
-* **Pause** — stop advancing (resumes on its own after *Pause Timeout* seconds without user input)
-* **Continue** — resume advancing
+* **Pause / Continue** — one button which toggles with the state: it stops the
+  advancing (resuming on its own after *Pause Timeout* seconds without user
+  input), or resumes it
 * **Next** — move to the next image
 * **Add Info** — opens the Identify Photo dialog: the faces found in the
   photo are listed left-to-right, each with a box to enter the person's name,

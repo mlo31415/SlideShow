@@ -29,7 +29,8 @@ under the image is the .txt content; if there is none, the image's filename
 without the extension is used.  A caption too long for its two lines is shown
 in a progressively smaller font until it fits.
 
-Buttons: Prev, Pause, Continue, Next, Add Info, Exit.
+Buttons: Prev, Pause/Continue (one button, toggling with the state), Next,
+Add Info, Exit.
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
 Add Info opens the Identify Photo dialog: the faces found in the photo are
 listed left-to-right, each with a box to enter the person's name, plus a box
@@ -188,8 +189,7 @@ class SlideShow(tk.Tk):
             return b
 
         self.prevButton=MakeButton("Prev", self.OnPrev)
-        self.pauseButton=MakeButton("Pause", self.OnPause)
-        self.continueButton=MakeButton("Continue", self.OnContinue)
+        self.pauseButton=MakeButton("Pause", self.OnPauseContinue)       # Toggles between Pause and Continue
         self.nextButton=MakeButton("Next", self.OnNext)
         self.addInfoButton=MakeButton("Add Info", self.OnAddInfo)
         self.exitButton=MakeButton("Exit", self.destroy)
@@ -551,22 +551,22 @@ class SlideShow(tk.Tk):
     def OnUserInput(self, event=None) -> None:
         self.lastInputTime=time.time()
 
+    # The one Pause/Continue button shows the action it will perform next
     def UpdateButtonStates(self) -> None:
-        self.pauseButton.config(state=tk.DISABLED if self.paused else tk.NORMAL)
-        self.continueButton.config(state=tk.NORMAL if self.paused else tk.DISABLED)
+        self.pauseButton.config(text="Continue" if self.paused else "Pause")
 
-    def OnPause(self) -> None:
-        self.paused=True
-        self.CancelAdvance()
-        self.UpdateButtonStates()
+    def OnPauseContinue(self) -> None:
+        if self.paused:
+            self.Resume()
+        else:
+            self.paused=True
+            self.CancelAdvance()
+            self.UpdateButtonStates()
 
     def Resume(self) -> None:
         self.paused=False
         self.UpdateButtonStates()
         self.ScheduleAdvance()
-
-    def OnContinue(self) -> None:
-        self.Resume()
 
     def OnNext(self) -> None:
         self.NextImage()
