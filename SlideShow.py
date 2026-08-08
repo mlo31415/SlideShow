@@ -840,13 +840,12 @@ class SlideShow(tk.Tk):
             panel.configure(width=windowWidth//2)
             panel.pack_propagate(False)         # Hold the half-window size regardless of content
             panel.pack(side=tk.RIGHT, fill=tk.Y, before=self.showFrame)
-            panelHeight=windowHeight
         else:
             panel.configure(height=windowHeight//2)
             panel.pack_propagate(False)
             panel.pack(side=tk.BOTTOM, fill=tk.X, before=self.showFrame)
-            panelHeight=windowHeight//2
         self.update_idletasks()
+        panelHeight=panel.winfo_height()        # The panel's real height (it starts below the title area)
         self.ShowImage()                # Rescale the photo into its reduced half
 
         tk.Label(panel, text="Identify Photo", font=("Segoe UI", 18, "bold"), fg="white", bg="#101010").pack(pady=(20, 5))
