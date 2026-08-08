@@ -37,10 +37,13 @@ Buttons: Prev, Pause/Continue (one button, toggling with the state), Next,
 Add Info.  A top bar holds a ✕ close box in the upper-right corner (and has
 room for future menu items).
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc to exit.
-Add Info opens the Identify Photo dialog: the faces found in the photo are
-listed left-to-right, each with a box to enter the person's name, plus a box
-for general comments.  Face detection uses OpenCV's YuNet model (the .onnx
-file alongside this script).
+Add Info splits the window in two the narrow way (left/right halves on a
+landscape screen, top/bottom on a portrait one), shoves the photo into one
+half, and shows the Identify Photo panel in the other: the faces found in the
+photo listed left-to-right, each with a box to enter the person's name, plus
+a box for general comments.  The other buttons are disabled while it is up.
+Face detection uses OpenCV's YuNet model (the .onnx file alongside this
+script).
 
 The settings file is monitored while the show is running: saving a change to it
 applies just the changed parameters on the fly (a changed Directory restarts the
@@ -177,7 +180,8 @@ class SlideShow(tk.Tk):
         self.histpos=-1
 
         self.paused=False
-        self.dialogOpen=False           # True while the Identify Photo dialog is up
+        self.dialogOpen=False           # True while the Identify Photo panel is up
+        self.identifyPanel=None         # The Identify Photo panel, when it is up
         self.photoInfo={}               # Names/comments entered via Add Info, keyed by image pathname (persistence TBD)
         self.lastInputTime=time.time()
         self.advanceAfterId=None        # Id of the pending after() call which advances to the next image
@@ -720,6 +724,8 @@ class SlideShow(tk.Tk):
             self.pauseButton.config(text=" Pause", image=self.buttonIcons["pause"])
 
     def OnPauseContinue(self) -> None:
+        if self.dialogOpen:
+            return
         if self.paused:
             self.Resume()
         else:
@@ -733,10 +739,14 @@ class SlideShow(tk.Tk):
         self.ScheduleAdvance()
 
     def OnNext(self) -> None:
+        if self.dialogOpen:
+            return                  # The arrow keys are inert while the Identify Photo panel is up
         self.NextImage()
         self.ScheduleAdvance()      # Restart the display-time clock
 
     def OnPrev(self) -> None:
+        if self.dialogOpen:
+            return
         self.PrevImage()
         self.ScheduleAdvance()
 
@@ -786,16 +796,24 @@ class SlideShow(tk.Tk):
         thumb.paste(square, (0, 0), mask)
         return ImageTk.PhotoImage(thumb)
 
-    # Open the Identify Photo dialog: a table with a row for each face found in the
-    # current photo (left-to-right), each with a box for the person's name, then a box
-    # for general comments, and Save/Cancel.  While the dialog is up the show is paused;
-    # when it closes, the show returns to whatever pause state it was in before.
+    # Open the Identify Photo panel: the main window splits in two the narrow way
+    # (left/right halves on a landscape screen, top/bottom halves on a portrait one),
+    # the photo display is shoved into one half and the identification panel -- a table
+    # with a row for each face found (left-to-right), each with a box for the person's
+    # name, then a box for general comments, and Save/Cancel -- takes the other.
+    # While the panel is up the show is paused; when it closes, the show returns to
+    # whatever pause state it was in before.
     def OnAddInfo(self) -> None:
+        if self.identifyPanel is not None:
+            return                      # Already open
         wasPaused=self.paused
         self.paused=True
         self.dialogOpen=True
         self.CancelAdvance()
         self.UpdateButtonStates()
+        # Prev/Next/Pause/Add Info make no sense while identifying -- the panel would go stale
+        for b in (self.prevButton, self.pauseButton, self.nextButton, self.addInfoButton):
+            b.config(state=tk.DISABLED)
 
         pathname=self.images[self.history[self.histpos]]
         try:
@@ -804,78 +822,96 @@ class SlideShow(tk.Tk):
             img=None
         boxes=self.DetectFaces(img) if img is not None else None
 
-        dlg=tk.Toplevel(self)
-        dlg.title("Identify Photo")
-        dlg.configure(bg="black")
+        # Split using the window's own dimensions (not the primary screen's -- the
+        # window may have been dragged to a different-sized or rotated monitor)
+        panel=tk.Frame(self, bg="#101010")
+        self.identifyPanel=panel
+        windowWidth=self.winfo_width()
+        windowHeight=self.winfo_height()
+        landscape=windowWidth > windowHeight
+        if landscape:
+            panel.configure(width=windowWidth//2)
+            panel.pack_propagate(False)         # Hold the half-window size regardless of content
+            panel.pack(side=tk.RIGHT, fill=tk.Y, before=self.centerFrame)
+            panelHeight=windowHeight
+        else:
+            panel.configure(height=windowHeight//2)
+            panel.pack_propagate(False)
+            panel.pack(side=tk.BOTTOM, fill=tk.X, before=self.centerFrame)
+            panelHeight=windowHeight//2
+        self.update_idletasks()
+        self.ShowImage()                # Rescale the photo into its reduced half
+
+        tk.Label(panel, text="Identify Photo", font=("Segoe UI", 18, "bold"), fg="white", bg="#101010").pack(pady=(20, 5))
 
         # The face table lives in a canvas so that it can scroll when there are more
-        # faces than fit on the screen
-        tableHolder=tk.Frame(dlg, bg="black")
-        tableHolder.pack(padx=30, pady=(20, 0))
-        tableCanvas=tk.Canvas(tableHolder, bg="black", highlightthickness=0)
+        # faces than fit in the panel
+        tableHolder=tk.Frame(panel, bg="#101010")
+        tableHolder.pack(pady=(5, 0))
+        tableCanvas=tk.Canvas(tableHolder, bg="#101010", highlightthickness=0)
         tableScrollbar=tk.Scrollbar(tableHolder, orient=tk.VERTICAL, command=tableCanvas.yview)
         tableCanvas.configure(yscrollcommand=tableScrollbar.set)
         tableCanvas.pack(side=tk.LEFT)
-        table=tk.Frame(tableCanvas, bg="black")
+        table=tk.Frame(tableCanvas, bg="#101010")
         tableCanvas.create_window((0, 0), window=table, anchor="nw")
-        tk.Label(table, text="", bg="black").grid(row=0, column=0)
-        tk.Label(table, text="Name", font=("Segoe UI", 12), fg="white", bg="black").grid(row=0, column=1, sticky="w")
-        dlg.thumbnails=[]               # Keep references so tk doesn't garbage-collect the images
+        tk.Label(table, text="", bg="#101010").grid(row=0, column=0)
+        tk.Label(table, text="Name", font=("Segoe UI", 12), fg="white", bg="#101010").grid(row=0, column=1, sticky="w")
+        panel.thumbnails=[]             # Keep references so tk doesn't garbage-collect the images
         nameEntries=[]
         if boxes is None:
-            tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg="#bbbbbb", bg="black").grid(row=1, column=0, columnspan=2)
+            tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg="#bbbbbb", bg="#101010").grid(row=1, column=0, columnspan=2)
         elif len(boxes) == 0:
-            tk.Label(table, text="(No faces detected)", font=("Segoe UI", 11), fg="#bbbbbb", bg="black").grid(row=1, column=0, columnspan=2)
+            tk.Label(table, text="(No faces detected)", font=("Segoe UI", 11), fg="#bbbbbb", bg="#101010").grid(row=1, column=0, columnspan=2)
         else:
             for i, box in enumerate(boxes):
                 thumb=self.MakeFaceThumbnail(img, box)
-                dlg.thumbnails.append(thumb)
-                tk.Label(table, image=thumb, bg="black").grid(row=i+1, column=0, padx=(0, 12), pady=4)
+                panel.thumbnails.append(thumb)
+                tk.Label(table, image=thumb, bg="#101010").grid(row=i+1, column=0, padx=(0, 12), pady=4)
                 entry=tk.Entry(table, font=("Segoe UI", 12), width=32)
                 entry.grid(row=i+1, column=1, sticky="w")
                 nameEntries.append(entry)
 
-        # Size the canvas to the table, capped at about half the screen; when capped,
-        # add the scrollbar and mouse-wheel scrolling
-        dlg.update_idletasks()
+        # Size the canvas to the table, capped to leave room for the comments box and
+        # buttons below; when capped, add the scrollbar and mouse-wheel scrolling
+        self.update_idletasks()
         tableWidth=table.winfo_reqwidth()
         tableHeight=table.winfo_reqheight()
-        maxTableHeight=int(self.winfo_screenheight()*0.55)
+        maxTableHeight=max(150, panelHeight-330)
         tableCanvas.configure(width=tableWidth, height=min(tableHeight, maxTableHeight),
                               scrollregion=(0, 0, tableWidth, tableHeight))
         if tableHeight > maxTableHeight:
             tableScrollbar.pack(side=tk.RIGHT, fill=tk.Y)
             tableCanvas.bind_all("<MouseWheel>", lambda e: tableCanvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
 
-        tk.Label(dlg, text="", bg="black").pack()
-        tk.Label(dlg, text="General comments about the photo", font=("Segoe UI", 12), fg="white", bg="black").pack()
-        commentsBox=tk.Text(dlg, font=("Segoe UI", 11), width=48, height=3)
-        commentsBox.pack(padx=30, pady=(4, 0))
+        tk.Label(panel, text="", bg="#101010").pack()
+        tk.Label(panel, text="General comments about the photo", font=("Segoe UI", 12), fg="white", bg="#101010").pack()
+        commentsBox=tk.Text(panel, font=("Segoe UI", 11), width=48, height=3)
+        commentsBox.pack(pady=(4, 0))
+
+        def Close() -> None:
+            self.unbind_all("<MouseWheel>")
+            panel.destroy()
+            self.identifyPanel=None
+            self.dialogOpen=False
+            for b in (self.prevButton, self.pauseButton, self.nextButton, self.addInfoButton):
+                b.config(state=tk.NORMAL)
+            self.lastInputTime=time.time()
+            if wasPaused:
+                self.UpdateButtonStates()
+            else:
+                self.Resume()
+            self.update_idletasks()
+            self.ShowImage()            # Rescale the photo back to the full display
 
         def OnSave() -> None:
             # TODO: Where this should be persisted is still to be decided; for now it is kept in memory
             self.photoInfo[pathname]={"names": [e.get().strip() for e in nameEntries], "comments": commentsBox.get("1.0", tk.END).strip()}
-            dlg.destroy()
+            Close()
 
-        buttons=tk.Frame(dlg, bg="black")
+        buttons=tk.Frame(panel, bg="#101010")
         buttons.pack(pady=15)
         tk.Button(buttons, text="Save", font=("Segoe UI", 12), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
-        tk.Button(buttons, text="Cancel", font=("Segoe UI", 12), width=9, command=dlg.destroy).pack(side=tk.LEFT, padx=8)
-
-        dlg.transient(self)
-        dlg.grab_set()
-        # Center the dialog on the screen
-        dlg.update_idletasks()
-        dlg.geometry(f"+{(self.winfo_screenwidth()-dlg.winfo_width())//2}+{(self.winfo_screenheight()-dlg.winfo_height())//2}")
-        self.wait_window(dlg)
-
-        self.unbind_all("<MouseWheel>")
-        self.dialogOpen=False
-        self.lastInputTime=time.time()
-        if wasPaused:
-            self.UpdateButtonStates()
-        else:
-            self.Resume()
+        tk.Button(buttons, text="Cancel", font=("Segoe UI", 12), width=9, command=Close).pack(side=tk.LEFT, padx=8)
 
 
 def main() -> None:

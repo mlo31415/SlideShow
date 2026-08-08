@@ -18,11 +18,14 @@ two lines is shown in a progressively smaller font until it fits.
   advancing (resuming on its own after *Pause Timeout* seconds without user
   input), or resumes it
 * **Next** — move to the next image
-* **Add Info** — opens the Identify Photo dialog: the faces found in the
-  photo are listed left-to-right, each with a box to enter the person's name,
-  plus a box for general comments about the photo.  (Face detection uses
-  OpenCV's YuNet model, the .onnx file alongside the script.  Where the
-  entered information gets saved is still to be decided.)
+* **Add Info** — splits the window in two the narrow way (left/right halves
+  on a landscape screen, top/bottom on a portrait one), shoves the photo into
+  one half, and shows the Identify Photo panel in the other: the faces found
+  in the photo listed left-to-right, each with a box to enter the person's
+  name, plus a box for general comments about the photo.  The other buttons
+  are disabled while it is up.  (Face detection uses OpenCV's YuNet model,
+  the .onnx file alongside the script.  Where the entered information gets
+  saved is still to be decided.)
 
 A top bar across the top of the screen holds the **Select Photo Show** menu at
 the left — one radio-checked entry per listed directory (directory names only);
