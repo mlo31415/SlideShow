@@ -30,8 +30,9 @@ and the parameter's default is used.
 Each photo comes with two same-named companion files: a .txt holding the
 caption and an .xml holding photo information from Piwigo.  The caption shown
 under the image is the .txt content; if there is none, the image's filename
-without the extension is used.  A caption too long for its two lines is shown
-in a progressively smaller font until it fits.
+without the extension is used.  A caption too long for its two lines first
+gets extra lines (up to about a quarter of the display area), then a
+progressively smaller font until it fits.
 
 Buttons: Prev, Pause/Continue (one button, toggling with the state), Next,
 Add Info.  A top bar holds a ✕ close box in the upper-right corner (and has
@@ -539,15 +540,26 @@ class SlideShow(tk.Tk):
                 pass
         if len(desc) == 0:
             desc=os.path.splitext(os.path.basename(pathname))[0]
-        # A caption too long for its two lines at normal size gets a progressively
-        # smaller font until it fits (or the minimum size is reached)
-        wraplength=self.descLabel.cget("wraplength")
+        # Fit the caption to the display area it actually has (which may be a half of
+        # the window while the Identify Photo panel is up, or a different monitor).
+        # A long caption first gets extra lines, up to about a quarter of the display
+        # area; only when that is not enough does the font shrink.
+        wraplength=self.centerFrame.winfo_width()-40
+        if wraplength < 100:
+            wraplength=self.winfo_screenwidth()-100     # Not laid out yet -- fall back to a guess
+        self.descLabel.config(wraplength=wraplength)
+
+        def MaxLines() -> int:
+            return max(CAPTION_LINES, int(self.centerFrame.winfo_height()*0.28/self.captionFont.metrics("linespace")))
+
         size=CAPTION_FONT_SIZE
         self.captionFont.configure(size=size)
-        while size > MIN_CAPTION_FONT_SIZE and self.CountWrappedLines(desc, self.captionFont, wraplength) > CAPTION_LINES:
+        lines=self.CountWrappedLines(desc, self.captionFont, wraplength)
+        while size > MIN_CAPTION_FONT_SIZE and lines > MaxLines():
             size-=2
             self.captionFont.configure(size=size)
-        self.descLabel.config(text=desc)
+            lines=self.CountWrappedLines(desc, self.captionFont, wraplength)
+        self.descLabel.config(text=desc, height=max(CAPTION_LINES, min(lines, MaxLines())))
 
         # The image itself, scaled to fit the space left over after the caption below it
         try:
