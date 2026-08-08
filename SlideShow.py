@@ -30,8 +30,9 @@ without the extension is used.  A caption too long for its two lines is shown
 in a progressively smaller font until it fits.
 
 Buttons: Prev, Pause/Continue (one button, toggling with the state), Next,
-Add Info, Exit.
-Keyboard shortcuts: left/right arrows for Prev/Next, Esc for Exit.
+Add Info.  A top bar holds a ✕ close box in the upper-right corner (and has
+room for future menu items).
+Keyboard shortcuts: left/right arrows for Prev/Next, Esc to exit.
 Add Info opens the Identify Photo dialog: the faces found in the photo are
 listed left-to-right, each with a box to enter the person's name, plus a box
 for general comments.  Face detection uses OpenCV's YuNet model (the .onnx
@@ -173,6 +174,14 @@ class SlideShow(tk.Tk):
         self.configure(bg="black")
         self.attributes("-fullscreen", True)
 
+        # Top bar: a place for future menu items, with a close box at the right end
+        self.topBar=tk.Frame(self, bg="#202020")
+        self.topBar.pack(side=tk.TOP, fill=tk.X)
+        self.closeButton=tk.Button(self.topBar, text="  ✕  ", command=self.destroy, font=("Segoe UI", 12),
+                                   fg="white", bg="#202020", activebackground="#C42B1C", activeforeground="white",
+                                   relief=tk.FLAT, bd=0)
+        self.closeButton.pack(side=tk.RIGHT)
+
         self.titleLabel=tk.Label(self, text=self.titleText, font=(self.titleFontName, self.titleFontSize, "bold"), fg="lightyellow", bg="black")
         self.titleLabel.pack(side=tk.TOP, pady=(10, 0))
 
@@ -197,7 +206,6 @@ class SlideShow(tk.Tk):
         self.pauseButton=MakeButton("Pause", self.OnPauseContinue, "pause")     # Toggles between Pause and Continue
         self.nextButton=MakeButton("Next", self.OnNext, "next")
         self.addInfoButton=MakeButton("Add Info", self.OnAddInfo)
-        self.exitButton=MakeButton("Exit", self.destroy)
 
         # The image and its caption are stacked in a frame which is centered in the
         # remaining space, so the caption sits directly below the image and moves with it.

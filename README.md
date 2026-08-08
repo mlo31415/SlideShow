@@ -23,9 +23,11 @@ two lines is shown in a progressively smaller font until it fits.
   plus a box for general comments about the photo.  (Face detection uses
   OpenCV's YuNet model, the .onnx file alongside the script.  Where the
   entered information gets saved is still to be decided.)
-* **Exit** — exits the program
 
-Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = Exit.
+A top bar across the top of the screen holds a **✕** close box in the
+upper-right corner (and has room for future menu items).
+
+Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = exit.
 
 ## Settings
 
