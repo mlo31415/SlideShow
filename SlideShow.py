@@ -227,8 +227,15 @@ class SlideShow(tk.Tk):
         self.subdirLabel=tk.Label(self, text="", font=("Segoe UI", 28), fg="#bbbbbb", bg="black")
         self.subdirLabel.pack(side=tk.TOP)
 
-        # Bottom-up: buttons at the very bottom, description just above them, image fills the rest.
-        buttonFrame=tk.Frame(self, bg="black")
+        # The slideshow section: the photo display with the button row at its bottom.
+        # The Identify Photo panel splits the window against this frame, so the buttons
+        # stay at the bottom of the slideshow half.
+        self.showFrame=tk.Frame(self, bg="black")
+        self.showFrame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # Bottom-up within the slideshow section: buttons at the very bottom,
+        # description just above them, image fills the rest.
+        buttonFrame=tk.Frame(self.showFrame, bg="black")
         buttonFrame.pack(side=tk.BOTTOM, pady=(5, 15))
 
         # Every button carries an image (a transparent spacer when it has no icon) so
@@ -248,7 +255,7 @@ class SlideShow(tk.Tk):
 
         # The image and its caption are stacked in a frame which is centered in the
         # remaining space, so the caption sits directly below the image and moves with it.
-        self.centerFrame=tk.Frame(self, bg="black")
+        self.centerFrame=tk.Frame(self.showFrame, bg="black")
         self.centerFrame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         innerFrame=tk.Frame(self.centerFrame, bg="black")
         innerFrame.pack(expand=True)
@@ -832,12 +839,12 @@ class SlideShow(tk.Tk):
         if landscape:
             panel.configure(width=windowWidth//2)
             panel.pack_propagate(False)         # Hold the half-window size regardless of content
-            panel.pack(side=tk.RIGHT, fill=tk.Y, before=self.centerFrame)
+            panel.pack(side=tk.RIGHT, fill=tk.Y, before=self.showFrame)
             panelHeight=windowHeight
         else:
             panel.configure(height=windowHeight//2)
             panel.pack_propagate(False)
-            panel.pack(side=tk.BOTTOM, fill=tk.X, before=self.centerFrame)
+            panel.pack(side=tk.BOTTOM, fill=tk.X, before=self.showFrame)
             panelHeight=windowHeight//2
         self.update_idletasks()
         self.ShowImage()                # Rescale the photo into its reduced half
