@@ -183,14 +183,19 @@ class SlideShow(tk.Tk):
         buttonFrame=tk.Frame(self, bg="black")
         buttonFrame.pack(side=tk.BOTTOM, pady=(5, 15))
 
-        def MakeButton(text: str, command) -> tk.Button:
-            b=tk.Button(buttonFrame, text=text, command=command, font=("Segoe UI", 12), width=11)
+        # Every button carries an image (a transparent spacer when it has no icon) so
+        # that they all size and align identically
+        self.buttonIcons=self.MakeButtonIcons()
+
+        def MakeButton(text: str, command, icon: str="blank") -> tk.Button:
+            b=tk.Button(buttonFrame, text=" "+text if icon != "blank" else text, image=self.buttonIcons[icon],
+                        compound=tk.LEFT, command=command, font=("Segoe UI", 12), width=110)
             b.pack(side=tk.LEFT, padx=8)
             return b
 
-        self.prevButton=MakeButton("⏮ Prev", self.OnPrev)
-        self.pauseButton=MakeButton("⏸ Pause", self.OnPauseContinue)       # Toggles between Pause and Continue
-        self.nextButton=MakeButton("⏭ Next", self.OnNext)
+        self.prevButton=MakeButton("Prev", self.OnPrev, "prev")
+        self.pauseButton=MakeButton("Pause", self.OnPauseContinue, "pause")     # Toggles between Pause and Continue
+        self.nextButton=MakeButton("Next", self.OnNext, "next")
         self.addInfoButton=MakeButton("Add Info", self.OnAddInfo)
         self.exitButton=MakeButton("Exit", self.destroy)
 
@@ -551,9 +556,39 @@ class SlideShow(tk.Tk):
     def OnUserInput(self, event=None) -> None:
         self.lastInputTime=time.time()
 
+    # Crisp little icons for the buttons, drawn rather than taken from font glyphs so
+    # that they are bold, level, and vertically centered on the label text
+    @staticmethod
+    def MakeButtonIcons() -> dict[str, ImageTk.PhotoImage]:
+        def New(width: int=15):
+            im=Image.new("RGBA", (width, 15), (0, 0, 0, 0))
+            return im, ImageDraw.Draw(im)
+        icons={}
+        im, d=New()                                             # Left arrow
+        d.polygon([(0, 7), (6, 1), (6, 13)], fill="black")
+        d.rectangle((6, 5, 14, 9), fill="black")
+        icons["prev"]=ImageTk.PhotoImage(im)
+        im, d=New()                                             # Right arrow
+        d.polygon([(14, 7), (8, 1), (8, 13)], fill="black")
+        d.rectangle((0, 5, 8, 9), fill="black")
+        icons["next"]=ImageTk.PhotoImage(im)
+        im, d=New()                                             # Pause bars
+        d.rectangle((2, 1, 5, 13), fill="black")
+        d.rectangle((9, 1, 12, 13), fill="black")
+        icons["pause"]=ImageTk.PhotoImage(im)
+        im, d=New()                                             # Play triangle
+        d.polygon([(3, 1), (3, 13), (13, 7)], fill="black")
+        icons["play"]=ImageTk.PhotoImage(im)
+        im, _=New(1)                                            # Transparent spacer
+        icons["blank"]=ImageTk.PhotoImage(im)
+        return icons
+
     # The one Pause/Continue button shows the action it will perform next
     def UpdateButtonStates(self) -> None:
-        self.pauseButton.config(text="▶ Continue" if self.paused else "⏸ Pause")
+        if self.paused:
+            self.pauseButton.config(text=" Continue", image=self.buttonIcons["play"])
+        else:
+            self.pauseButton.config(text=" Pause", image=self.buttonIcons["pause"])
 
     def OnPauseContinue(self) -> None:
         if self.paused:
