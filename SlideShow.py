@@ -210,6 +210,13 @@ class SlideShow(tk.Tk):
         self.selectedShowVar=tk.IntVar(value=self.currentDirIndex)
         self.RebuildShowMenu()
 
+        # Dragging the top bar moves the window, so it can be dropped on another monitor
+        self.dragStart=None
+        self.dragging=False
+        self.topBar.bind("<ButtonPress-1>", self.OnTopBarPress)
+        self.topBar.bind("<B1-Motion>", self.OnTopBarMotion)
+        self.topBar.bind("<ButtonRelease-1>", self.OnTopBarRelease)
+
         self.titleLabel=tk.Label(self, text=self.titleText, font=(self.titleFontName, self.titleFontSize, "bold"), fg="lightyellow", bg="black")
         self.titleLabel.pack(side=tk.TOP, pady=(10, 0))
 
@@ -353,6 +360,53 @@ class SlideShow(tk.Tk):
         if sz <= 0:
             sz=DEFAULT_TITLE_FONT_SIZE
         return family, sz
+
+
+    # -------------------- Dragging the window by its top bar --------------------
+    # A fullscreen window cannot be dragged directly, so on the first real movement it
+    # drops out of fullscreen into a small window that follows the mouse; when the
+    # button is released it is expanded to fill whichever monitor it was dropped on.
+    # (tk's own -fullscreen always snaps back to the original monitor, so after
+    # re-entering fullscreen the window is moved onto the drop monitor by hand with
+    # the Windows API.)
+    def OnTopBarPress(self, event) -> None:
+        self.dragStart=(event.x_root, event.y_root)
+        self.dragging=False
+
+    def OnTopBarMotion(self, event) -> None:
+        if self.dragStart is None:
+            return
+        if not self.dragging:
+            if abs(event.x_root-self.dragStart[0])+abs(event.y_root-self.dragStart[1]) < 10:
+                return                  # Ignore the tiny jiggles of a simple click
+            self.dragging=True
+            self.attributes("-fullscreen", False)
+        self.geometry(f"400x250+{event.x_root-200}+{event.y_root-15}")
+
+    def OnTopBarRelease(self, event) -> None:
+        if self.dragging:
+            self.attributes("-fullscreen", True)
+            self.update_idletasks()
+            try:
+                import ctypes
+                from ctypes import wintypes
+                class MONITORINFO(ctypes.Structure):
+                    _fields_=[("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                              ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+                hmon=ctypes.windll.user32.MonitorFromPoint(wintypes.POINT(event.x_root, event.y_root), 2)    # MONITOR_DEFAULTTONEAREST
+                mi=MONITORINFO()
+                mi.cbSize=ctypes.sizeof(MONITORINFO)
+                ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi))
+                r=mi.rcMonitor
+                hwnd=ctypes.windll.user32.GetAncestor(self.winfo_id(), 2)       # GA_ROOT
+                ctypes.windll.user32.SetWindowPos(hwnd, 0, r.left, r.top, r.right-r.left, r.bottom-r.top, 0x0014)   # SWP_NOZORDER | SWP_NOACTIVATE
+                self.descLabel.config(wraplength=(r.right-r.left)-100)          # The new monitor may be a different width
+            except Exception:
+                pass                    # If the Windows API is unavailable we are at least fullscreen somewhere
+            self.update_idletasks()
+            self.ShowImage()            # Rescale the photo to the monitor it landed on
+        self.dragStart=None
+        self.dragging=False
 
 
     # Rebuild the Select Photo Show menu from the current directory list.  Entries show
