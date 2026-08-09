@@ -99,9 +99,11 @@ KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font",
 # The color schemes for the Mode parameter (default: dark)
 THEMES={
     "dark":  {"bg": "black", "fg": "white", "titleFg": "lightyellow", "subdirFg": "#bbbbbb",
-              "barBg": "#202020", "barFg": "white", "barActiveBg": "#3a3a3a", "panelBg": "#101010"},
+              "barBg": "#202020", "barFg": "white", "barActiveBg": "#3a3a3a", "panelBg": "#101010",
+              "separatorBg": "#606060"},
     "light": {"bg": "white", "fg": "black", "titleFg": "darkgoldenrod", "subdirFg": "#555555",
-              "barBg": "#e4e4e4", "barFg": "black", "barActiveBg": "#d0d0d0", "panelBg": "#efefef"},
+              "barBg": "#e4e4e4", "barFg": "black", "barActiveBg": "#d0d0d0", "panelBg": "#efefef",
+              "separatorBg": "#b0b0b0"},
 }
 
 
@@ -983,14 +985,20 @@ class SlideShow(tk.Tk):
         windowWidth=self.winfo_width()
         windowHeight=self.winfo_height()
         landscape=windowWidth > windowHeight
+        # A thin gray band separates the two halves
+        separator=tk.Frame(self, bg=self.theme["separatorBg"])
         if landscape:
             panel.configure(width=windowWidth//2)
             panel.pack_propagate(False)         # Hold the half-window size regardless of content
             panel.pack(side=tk.RIGHT, fill=tk.Y, before=self.showFrame)
+            separator.configure(width=2)
+            separator.pack(side=tk.RIGHT, fill=tk.Y, before=self.showFrame)
         else:
             panel.configure(height=windowHeight//2)
             panel.pack_propagate(False)
             panel.pack(side=tk.BOTTOM, fill=tk.X, before=self.showFrame)
+            separator.configure(height=2)
+            separator.pack(side=tk.BOTTOM, fill=tk.X, before=self.showFrame)
         self.update_idletasks()
         panelHeight=panel.winfo_height()        # The panel's real height (it starts below the title area)
         self.ShowImage()                # Rescale the photo into its reduced half
@@ -1053,6 +1061,7 @@ class SlideShow(tk.Tk):
         def Close() -> None:
             self.unbind_all("<MouseWheel>")
             panel.destroy()
+            separator.destroy()
             self.identifyPanel=None
             self.dialogOpen=False
             for b in (self.prevButton, self.pauseButton, self.nextButton, self.addInfoButton):
