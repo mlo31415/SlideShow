@@ -263,11 +263,13 @@ class SlideShow(tk.Tk):
         self.topBar.bind("<B1-Motion>", self.OnTopBarMotion)
         self.topBar.bind("<ButtonRelease-1>", self.OnTopBarRelease)
 
-        self.titleLabel=tk.Label(self, text=self.titleText, font=(self.titleFontName, self.titleFontSize, "bold"), fg="lightyellow", bg="black")
-        self.titleLabel.pack(side=tk.TOP, pady=(10, 0))
-
-        self.subdirLabel=tk.Label(self, text="", font=("Segoe UI", 28), fg="#bbbbbb", bg="black")
-        self.subdirLabel.pack(side=tk.TOP)
+        # The title and the album line share a header; on a landscape window they sit
+        # on a single line to leave more room below, on a portrait one they stack
+        self.headerFrame=tk.Frame(self, bg="black")
+        self.headerFrame.pack(side=tk.TOP, pady=(10, 0))
+        self.titleLabel=tk.Label(self.headerFrame, text=self.titleText, font=(self.titleFontName, self.titleFontSize, "bold"), fg="lightyellow", bg="black")
+        self.subdirLabel=tk.Label(self.headerFrame, text="", font=("Segoe UI", 28), fg="#bbbbbb", bg="black")
+        self.ArrangeHeader()
 
         # The slideshow section: the photo display with the button row at its bottom.
         # The Identify Photo panel splits the window against this frame, so the buttons
@@ -325,12 +327,25 @@ class SlideShow(tk.Tk):
         self.after(100, self.Start)
 
 
+    # On a landscape window the title and the album line share a single top line; on a
+    # portrait one they stack.  Called at startup and when a drag lands the window on a
+    # monitor of possibly different orientation.
+    def ArrangeHeader(self) -> None:
+        self.titleLabel.pack_forget()
+        self.subdirLabel.pack_forget()
+        if self.winfo_width() >= self.winfo_height():
+            self.titleLabel.pack(side=tk.LEFT, anchor=tk.S)
+            self.subdirLabel.pack(side=tk.LEFT, anchor=tk.S, padx=(30, 0), pady=(0, 4))
+        else:
+            self.titleLabel.pack(side=tk.TOP)
+            self.subdirLabel.pack(side=tk.TOP)
+
     # Apply the current theme's colors to all the permanent widgets.  (The Identify
     # Photo panel picks up the theme when it is next opened.)
     def ApplyTheme(self) -> None:
         t=self.theme
         self.configure(bg=t["bg"])
-        for w in (self.showFrame, self.buttonFrame, self.centerFrame, self.innerFrame, self.imageLabel):
+        for w in (self.showFrame, self.buttonFrame, self.centerFrame, self.innerFrame, self.imageLabel, self.headerFrame):
             w.configure(bg=t["bg"])
         self.titleLabel.configure(bg=t["bg"], fg=t["titleFg"])
         self.subdirLabel.configure(bg=t["bg"], fg=t["subdirFg"])
@@ -347,6 +362,7 @@ class SlideShow(tk.Tk):
 
 
     def Start(self) -> None:
+        self.ArrangeHeader()            # Now that the window has its real size
         self.NextImage()
         self.ScheduleAdvance()
         self.OnTick()
@@ -476,6 +492,7 @@ class SlideShow(tk.Tk):
             except Exception:
                 pass                    # If the Windows API is unavailable we are at least fullscreen somewhere
             self.update_idletasks()
+            self.ArrangeHeader()        # The new monitor may have a different orientation
             self.ShowImage()            # Rescale the photo to the monitor it landed on
         self.dragStart=None
         self.dragging=False
