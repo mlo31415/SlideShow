@@ -24,8 +24,15 @@ two lines is shown in a progressively smaller font until it fits.
   in the photo listed left-to-right, each with a box to enter the person's
   name, plus a box for general comments about the photo.  The other buttons
   are disabled while it is up.  (Face detection uses OpenCV's YuNet model,
-  the .onnx file alongside the script.  Where the entered information gets
-  saved is still to be decided.)
+  the .onnx file alongside the script.)
+
+Each Save appends a record to this session's output log, `SlideShow Output
+<date and time of the latest save>.json` in the program's directory (a new
+file per run): concatenated pretty-printed JSON objects holding the save
+time, the photo's Piwigo id and file name (from its `.xml` companion), the
+album path, the editor (future), the faces with names and detection boxes,
+the comment, and the photo date (future).  Load with
+`json.JSONDecoder().raw_decode` in a loop.
 
 A top bar across the top of the screen holds the **Select Photo Show** menu at
 the left — one radio-checked entry per listed directory (directory names only);

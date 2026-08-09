@@ -47,6 +47,14 @@ a box for general comments.  The other buttons are disabled while it is up.
 Face detection uses OpenCV's YuNet model (the .onnx file alongside this
 script).
 
+Each Save appends a record to this session's output log, "SlideShow Output
+<date and time of the latest save>.json" in the program's directory (a new
+file per run): concatenated pretty-printed JSON objects holding the save
+time, the photo's Piwigo id and file name (from its .xml companion), the
+album path, the editor (future), the faces with names and detection boxes,
+the comment, and the photo date (future).  Load with
+json.JSONDecoder().raw_decode in a loop.
+
 The settings file is monitored while the show is running: saving a change to it
 applies just the changed parameters on the fly (a changed Directory restarts the
 show from the new tree; anything else leaves the current image undisturbed).
@@ -57,11 +65,13 @@ Requires: pip install Pillow opencv-python
 """
 
 import os
+import re
 import sys
 import json
 import time
 import random
 from typing import Any
+import xml.etree.ElementTree as ET
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import font as tkfont
@@ -193,7 +203,16 @@ class SlideShow(tk.Tk):
         self.paused=False
         self.dialogOpen=False           # True while the Identify Photo panel is up
         self.identifyPanel=None         # The Identify Photo panel, when it is up
-        self.photoInfo={}               # Names/comments entered via Add Info, keyed by image pathname (persistence TBD)
+
+        # Each run gets its own output log of Identify Photo saves, next to the settings
+        # file; its name carries the date and time of the latest save (initially the
+        # startup time), and records are appended to it incrementally.
+        self.outputPath=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
+        try:
+            open(self.outputPath, "w", encoding="utf-8").close()
+        except OSError:
+            pass
         self.lastInputTime=time.time()
         self.advanceAfterId=None        # Id of the pending after() call which advances to the next image
 
@@ -457,6 +476,25 @@ class SlideShow(tk.Tk):
         for i, d in enumerate(self.rootDirectories):
             self.showMenu.add_radiobutton(label=os.path.basename(d.rstrip("\\/")) or d,
                                           variable=self.selectedShowVar, value=i, command=self.OnSelectShow)
+
+    # Append one Identify Photo save record to this session's output log -- a
+    # pretty-printed JSON object followed by a blank line (concatenated JSON, loadable
+    # with json.JSONDecoder().raw_decode in a loop) -- and rename the file so its name
+    # carries the date and time of this latest save.
+    def LogSave(self, record: dict) -> None:
+        try:
+            text=json.dumps(record, indent=2, ensure_ascii=False)
+            # Compact the four-number face boxes back onto one line for readability
+            text=re.sub(r"\[\s+(-?\d+),\s+(-?\d+),\s+(-?\d+),\s+(-?\d+)\s+\]", r"[\1, \2, \3, \4]", text)
+            with open(self.outputPath, "a", encoding="utf-8") as file:
+                file.write(text+"\n\n")
+            newPath=os.path.join(os.path.dirname(self.outputPath),
+                                 f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
+            if newPath != self.outputPath:
+                os.replace(self.outputPath, newPath)
+                self.outputPath=newPath
+        except OSError as e:
+            messagebox.showwarning("SlideShow", f"Could not write the output log:\n{e}", parent=self)
 
     # Remember the selected show's directory between invocations
     def SaveState(self) -> None:
@@ -960,8 +998,31 @@ class SlideShow(tk.Tk):
             self.ShowImage()            # Rescale the photo back to the full display
 
         def OnSave() -> None:
-            # TODO: Where this should be persisted is still to be decided; for now it is kept in memory
-            self.photoInfo[pathname]={"names": [e.get().strip() for e in nameEntries], "comments": commentsBox.get("1.0", tk.END).strip()}
+            # The photo's Piwigo id and file name come from its .xml companion file
+            photoId=None
+            photoFile=os.path.basename(pathname)
+            xmlPath=os.path.splitext(pathname)[0]+".xml"
+            if os.path.exists(xmlPath):
+                try:
+                    xmlRoot=ET.parse(xmlPath).getroot()
+                    idText=(xmlRoot.findtext("id") or "").strip()
+                    if idText.isdigit():
+                        photoId=int(idText)
+                    photoFile=(xmlRoot.findtext("file") or "").strip() or photoFile
+                except (ET.ParseError, OSError):
+                    pass
+            album=os.path.relpath(os.path.dirname(pathname), self.rootDirectories[self.currentDirIndex])
+            album="" if album == "." else album.replace(os.sep, "/")
+            self.LogSave({
+                "saved":      time.strftime("%Y-%m-%d %H:%M:%S"),
+                "photo id":   photoId,
+                "file":       photoFile,
+                "album":      album,
+                "editor":     "",       # Editor identity capture is yet to come
+                "faces":      [{"name": e.get().strip(), "box": list(box)} for e, box in zip(nameEntries, boxes or [])],
+                "comment":    commentsBox.get("1.0", tk.END).strip(),
+                "photo date": "",       # Editing the photo's date is yet to come
+            })
             Close()
 
         buttons=tk.Frame(panel, bg=pbg)

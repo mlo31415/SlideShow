@@ -19,3 +19,4 @@ dist/
 
 # Runtime / per-user state
 SlideShow state.json
+SlideShow Output *.json
