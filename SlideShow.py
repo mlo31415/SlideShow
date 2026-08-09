@@ -92,6 +92,8 @@ DEFAULT_TITLE_FONT_SIZE=32
 CAPTION_FONT_SIZE=22            # Normal caption size; long captions shrink from here...
 MIN_CAPTION_FONT_SIZE=12        # ...down to this, to fit the two caption lines
 CAPTION_LINES=2
+SUBDIR_FONT_SIZE=28             # Normal album-line size; on a landscape single line it shrinks...
+MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then wraps below it
 KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout"}
 
 # The color schemes for the Mode parameter (default: dark)
@@ -268,7 +270,9 @@ class SlideShow(tk.Tk):
         self.headerFrame=tk.Frame(self, bg="black")
         self.headerFrame.pack(side=tk.TOP, pady=(10, 0))
         self.titleLabel=tk.Label(self.headerFrame, text=self.titleText, font=(self.titleFontName, self.titleFontSize, "bold"), fg="lightyellow", bg="black")
-        self.subdirLabel=tk.Label(self.headerFrame, text="", font=("Segoe UI", 28), fg="#bbbbbb", bg="black")
+        self.subdirFont=tkfont.Font(family="Segoe UI", size=SUBDIR_FONT_SIZE)
+        self.subdirLabel=tk.Label(self.headerFrame, text="", font=self.subdirFont, fg="#bbbbbb", bg="black")
+        self.headerMode=""              # "single" or "stacked", set by ArrangeHeader
         self.ArrangeHeader()
 
         # The slideshow section: the photo display with the button row at its bottom.
@@ -327,18 +331,36 @@ class SlideShow(tk.Tk):
         self.after(100, self.Start)
 
 
-    # On a landscape window the title and the album line share a single top line; on a
-    # portrait one they stack.  Called at startup and when a drag lands the window on a
-    # monitor of possibly different orientation.
+    # Arrange the title and the album line.  On a landscape window they share a single
+    # top line, the album font shrinking (to a floor) to fit beside the title; when even
+    # the smallest size will not fit, the album wraps onto its own line below the title,
+    # which is also the portrait-window arrangement.  Called on every ShowImage, since
+    # the album text changes from photo to photo.
     def ArrangeHeader(self) -> None:
-        self.titleLabel.pack_forget()
-        self.subdirLabel.pack_forget()
+        size=SUBDIR_FONT_SIZE
+        self.subdirFont.configure(size=size)
+        mode="stacked"
         if self.winfo_width() >= self.winfo_height():
-            self.titleLabel.pack(side=tk.LEFT, anchor=tk.S)
-            self.subdirLabel.pack(side=tk.LEFT, anchor=tk.S, padx=(30, 0), pady=(0, 4))
-        else:
-            self.titleLabel.pack(side=tk.TOP)
-            self.subdirLabel.pack(side=tk.TOP)
+            titleFont=tkfont.Font(font=self.titleLabel.cget("font"))
+            avail=self.winfo_width()-60-titleFont.measure(self.titleLabel.cget("text"))-30
+            while size > MIN_SUBDIR_FONT_SIZE and self.subdirFont.measure(self.subdirLabel.cget("text")) > avail:
+                size-=2
+                self.subdirFont.configure(size=size)
+            if self.subdirFont.measure(self.subdirLabel.cget("text")) <= avail:
+                mode="single"
+            else:
+                self.subdirFont.configure(size=SUBDIR_FONT_SIZE)       # Wrapping -- full size again
+        if mode != self.headerMode:
+            self.headerMode=mode
+            self.titleLabel.pack_forget()
+            self.subdirLabel.pack_forget()
+            if mode == "single":
+                self.titleLabel.pack(side=tk.LEFT, anchor=tk.S)
+                self.subdirLabel.pack(side=tk.LEFT, anchor=tk.S, padx=(30, 0), pady=(0, 4))
+            else:
+                self.titleLabel.pack(side=tk.TOP)
+                self.subdirLabel.pack(side=tk.TOP)
+            self.update_idletasks()     # So the image scaling that follows sees the new header height
 
     # Apply the current theme's colors to all the permanent widgets.  (The Identify
     # Photo panel picks up the theme when it is next opened.)
@@ -362,7 +384,6 @@ class SlideShow(tk.Tk):
 
 
     def Start(self) -> None:
-        self.ArrangeHeader()            # Now that the window has its real size
         self.NextImage()
         self.ScheduleAdvance()
         self.OnTick()
@@ -492,8 +513,7 @@ class SlideShow(tk.Tk):
             except Exception:
                 pass                    # If the Windows API is unavailable we are at least fullscreen somewhere
             self.update_idletasks()
-            self.ArrangeHeader()        # The new monitor may have a different orientation
-            self.ShowImage()            # Rescale the photo to the monitor it landed on
+            self.ShowImage()            # Rescale to the new monitor (also refits the header)
         self.dragStart=None
         self.dragging=False
 
@@ -622,6 +642,7 @@ class SlideShow(tk.Tk):
             while len(parts) > 1 and parts[1].casefold().startswith(parts[0].casefold()):
                 parts.pop(0)
             self.subdirLabel.config(text="/".join(parts))
+        self.ArrangeHeader()            # The album text just changed; refit the header
 
         # The caption: each photo comes with same-named .txt (caption) and .xml (photo
         # info) files; the caption is the .txt content, or the filename if there is none
