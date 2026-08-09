@@ -33,9 +33,10 @@ Each Save appends a record to this session's output log, `SlideShow Output
 file per run, created at the first save so a run with no saves leaves no
 file): concatenated pretty-printed JSON objects holding the save
 time, the photo's Piwigo id and file name (from its `.xml` companion), the
-album path, the editor (future), the faces with names and detection boxes,
-the comment, and the photo date (future).  Load with
-`json.JSONDecoder().raw_decode` in a loop.
+album path, the editor's email, the numbered faces with names and detection
+boxes, the comment, and the photo date (future).  Load with
+`json.JSONDecoder().raw_decode` in a loop.  The face rows in the panel are
+numbered #1, #2, … so a comment can refer to a face by its number.
 
 A top bar across the top of the screen holds the **Select Photo Show** menu at
 the left — one radio-checked entry per listed directory (directory names only);

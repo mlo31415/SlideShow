@@ -57,8 +57,8 @@ Each Save appends a record to this session's output log, "SlideShow Output
 file per run, created at the first save so a run with no saves leaves no
 file): concatenated pretty-printed JSON objects holding the save
 time, the photo's Piwigo id and file name (from its .xml companion), the
-album path, the editor (future), the faces with names and detection boxes,
-the comment, and the photo date (future).  Load with
+album path, the editor's email, the numbered faces with names and detection
+boxes, the comment, and the photo date (future).  Load with
 json.JSONDecoder().raw_decode in a loop.
 
 The settings file is monitored while the show is running: saving a change to it
@@ -1015,20 +1015,22 @@ class SlideShow(tk.Tk):
         table=tk.Frame(tableCanvas, bg=pbg)
         tableCanvas.create_window((0, 0), window=table, anchor="nw")
         tk.Label(table, text="", bg=pbg).grid(row=0, column=0)
-        tk.Label(table, text="Name", font=("Segoe UI", 12), fg=pfg, bg=pbg).grid(row=0, column=1, sticky="w")
+        tk.Label(table, text="Name", font=("Segoe UI", 12), fg=pfg, bg=pbg).grid(row=0, column=2, sticky="w")
         panel.thumbnails=[]             # Keep references so tk doesn't garbage-collect the images
         nameEntries=[]
         if boxes is None:
-            tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=2)
+            tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=3)
         elif len(boxes) == 0:
-            tk.Label(table, text="(No faces detected)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=2)
+            tk.Label(table, text="(No faces detected)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=3)
         else:
+            # Each row is numbered so a comment can refer to a face by its number
             for i, box in enumerate(boxes):
                 thumb=self.MakeFaceThumbnail(img, box, pbg)
                 panel.thumbnails.append(thumb)
-                tk.Label(table, image=thumb, bg=pbg).grid(row=i+1, column=0, padx=(0, 12), pady=4)
+                tk.Label(table, text=f"#{i+1}", font=("Segoe UI", 12), fg=pfg, bg=pbg).grid(row=i+1, column=0, padx=(0, 8), sticky="e")
+                tk.Label(table, image=thumb, bg=pbg).grid(row=i+1, column=1, padx=(0, 12), pady=4)
                 entry=tk.Entry(table, font=("Segoe UI", 12), width=32)
-                entry.grid(row=i+1, column=1, sticky="w")
+                entry.grid(row=i+1, column=2, sticky="w")
                 nameEntries.append(entry)
 
         # Size the canvas to the table, capped to leave room for the comments box and
@@ -1096,7 +1098,7 @@ class SlideShow(tk.Tk):
                 "file":       photoFile,
                 "album":      album,
                 "editor":     self.editorEmail,
-                "faces":      [{"name": e.get().strip(), "box": list(box)} for e, box in zip(nameEntries, boxes or [])],
+                "faces":      [{"number": i+1, "name": e.get().strip(), "box": list(box)} for i, (e, box) in enumerate(zip(nameEntries, boxes or []))],
                 "comment":    commentsBox.get("1.0", tk.END).strip(),
                 "photo date": "",       # Editing the photo's date is yet to come
             })
