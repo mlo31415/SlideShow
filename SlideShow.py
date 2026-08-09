@@ -24,6 +24,8 @@ The directory to be displayed and the other operating parameters are read from
     Pause Timeout         Seconds of no user input after which a paused show
                           resumes on its own  (default: 240)
     Mode                  "Dark" or "Light" color scheme  (default: Dark)
+    Email Timeout         Seconds of no user input after which the remembered
+                          email address is forgotten  (default: 60)
 
 A parameter value whose first non-blank character is '#' is treated as empty,
 and the parameter's default is used.
@@ -43,7 +45,10 @@ Add Info splits the window in two the narrow way (left/right halves on a
 landscape screen, top/bottom on a portrait one), shoves the photo into one
 half, and shows the Identify Photo panel in the other: the faces found in the
 photo listed left-to-right, each with a box to enter the person's name, plus
-a box for general comments.  The other buttons are disabled while it is up.
+a box for other comments and corrections and one for the identifier's email
+address (remembered between saves while the user stays active, then forgotten
+after Email Timeout seconds of no input).  The other buttons are disabled
+while it is up.
 Face detection uses OpenCV's YuNet model (the .onnx file alongside this
 script).
 
@@ -87,7 +92,7 @@ DEFAULT_TITLE_FONT_SIZE=32
 CAPTION_FONT_SIZE=22            # Normal caption size; long captions shrink from here...
 MIN_CAPTION_FONT_SIZE=12        # ...down to this, to fit the two caption lines
 CAPTION_LINES=2
-KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode"}
+KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout"}
 
 # The color schemes for the Mode parameter (default: dark)
 THEMES={
@@ -169,6 +174,13 @@ class SlideShow(tk.Tk):
             self.pauseTimeout=240.0
         if self.pauseTimeout <= 0:
             self.pauseTimeout=240.0
+        try:
+            self.emailTimeout=float(Get("Email Timeout", "60"))
+        except ValueError:
+            self.emailTimeout=60.0
+        if self.emailTimeout <= 0:
+            self.emailTimeout=60.0
+        self.editorEmail=""             # Remembered between saves while the user stays active
 
         if len(self.rootDirectories) == 0:
             self.Fatal(f"No directory paths are defined in '{settingsPath}'.\n\nThe settings file needs a 'Directories:' line followed by at least one existing directory path.")
@@ -356,7 +368,7 @@ class SlideShow(tk.Tk):
             if not val.startswith("seq") and not val.startswith("random"):
                 problems.append(f"Order='{settings['order']}' should be Sequential or Random  (ignoring it)")
 
-        for pname, label in (("display time", "Display Time"), ("pause timeout", "Pause Timeout"), ("title font size", "Title Font Size")):
+        for pname, label in (("display time", "Display Time"), ("pause timeout", "Pause Timeout"), ("title font size", "Title Font Size"), ("email timeout", "Email Timeout")):
             if pname in settings:
                 try:
                     if float(settings[pname]) <= 0:
@@ -664,6 +676,8 @@ class SlideShow(tk.Tk):
     def OnTick(self) -> None:
         if self.paused and not self.dialogOpen and time.time()-self.lastInputTime >= self.pauseTimeout:
             self.Resume()
+        if len(self.editorEmail) > 0 and time.time()-self.lastInputTime >= self.emailTimeout:
+            self.editorEmail=""         # Idle too long -- the next identifier may be someone else
         self.CheckSettingsFile()
         self.after(1000, self.OnTick)
 
@@ -732,6 +746,13 @@ class SlideShow(tk.Tk):
             pauseTimeout=self.pauseTimeout
         if pauseTimeout > 0:
             self.pauseTimeout=pauseTimeout
+
+        try:
+            emailTimeout=float(Get("Email Timeout", "60"))
+        except ValueError:
+            emailTimeout=self.emailTimeout
+        if emailTimeout > 0:
+            self.emailTimeout=emailTimeout
 
         mode=Get("Mode", "Dark").casefold()
         if mode in THEMES and THEMES[mode] is not self.theme:
@@ -970,7 +991,7 @@ class SlideShow(tk.Tk):
         self.update_idletasks()
         tableWidth=table.winfo_reqwidth()
         tableHeight=table.winfo_reqheight()
-        maxTableHeight=max(150, panelHeight-330)
+        maxTableHeight=max(150, panelHeight-390)
         tableCanvas.configure(width=tableWidth, height=min(tableHeight, maxTableHeight),
                               scrollregion=(0, 0, tableWidth, tableHeight))
         if tableHeight > maxTableHeight:
@@ -978,9 +999,18 @@ class SlideShow(tk.Tk):
             tableCanvas.bind_all("<MouseWheel>", lambda e: tableCanvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
 
         tk.Label(panel, text="", bg=pbg).pack()
-        tk.Label(panel, text="General comments about the photo", font=("Segoe UI", 12), fg=pfg, bg=pbg).pack()
-        commentsBox=tk.Text(panel, font=("Segoe UI", 11), width=48, height=3)
+        tk.Label(panel, text="Other Comments and Corrections", font=("Segoe UI", 12), fg=pfg, bg=pbg).pack()
+        commentsBox=tk.Text(panel, font=("Segoe UI", 11), width=48, height=4)
         commentsBox.pack(pady=(4, 0))
+
+        # The email address is remembered between saves as long as the user stays
+        # active; OnTick forgets it after Email Timeout seconds without input
+        emailRow=tk.Frame(panel, bg=pbg)
+        emailRow.pack(pady=(8, 0))
+        tk.Label(emailRow, text="Your email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg).pack(side=tk.LEFT, padx=(0, 8))
+        emailEntry=tk.Entry(emailRow, font=("Segoe UI", 12), width=30)
+        emailEntry.pack(side=tk.LEFT)
+        emailEntry.insert(0, self.editorEmail)
 
         def Close() -> None:
             self.unbind_all("<MouseWheel>")
@@ -1013,12 +1043,13 @@ class SlideShow(tk.Tk):
                     pass
             album=os.path.relpath(os.path.dirname(pathname), self.rootDirectories[self.currentDirIndex])
             album="" if album == "." else album.replace(os.sep, "/")
+            self.editorEmail=emailEntry.get().strip()
             self.LogSave({
                 "saved":      time.strftime("%Y-%m-%d %H:%M:%S"),
                 "photo id":   photoId,
                 "file":       photoFile,
                 "album":      album,
-                "editor":     "",       # Editor identity capture is yet to come
+                "editor":     self.editorEmail,
                 "faces":      [{"name": e.get().strip(), "box": list(box)} for e, box in zip(nameEntries, boxes or [])],
                 "comment":    commentsBox.get("1.0", tk.END).strip(),
                 "photo date": "",       # Editing the photo's date is yet to come

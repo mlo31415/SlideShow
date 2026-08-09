@@ -22,8 +22,10 @@ two lines is shown in a progressively smaller font until it fits.
   on a landscape screen, top/bottom on a portrait one), shoves the photo into
   one half, and shows the Identify Photo panel in the other: the faces found
   in the photo listed left-to-right, each with a box to enter the person's
-  name, plus a box for general comments about the photo.  The other buttons
-  are disabled while it is up.  (Face detection uses OpenCV's YuNet model,
+  name, plus a box for other comments and corrections and one for the
+  identifier's email address.  The email address is remembered between saves
+  while the user stays active (see *Email Timeout*).  The other buttons are
+  disabled while the panel is up.  (Face detection uses OpenCV's YuNet model,
   the .onnx file alongside the script.)
 
 Each Save appends a record to this session's output log, `SlideShow Output
@@ -57,6 +59,7 @@ in the program's directory:
 | Display Subdirectory | Show the subdirectory chain for images below the top level | True |
 | Pause Timeout | Seconds of no user input after which a paused show resumes | 240 |
 | Mode | `Dark` or `Light` color scheme | Dark |
+| Email Timeout | Seconds of no user input after which the remembered email address is forgotten | 60 |
 
 A parameter value whose first non-blank character is `#` is treated as empty,
 and the parameter's default is used.

@@ -17,3 +17,5 @@ Display Subdirectory=True
 Pause Timeout=240
 # Mode is Dark or Light (default Dark)
 Mode=Dark
+# Seconds of no user input after which the remembered email address is forgotten
+Email Timeout=60
