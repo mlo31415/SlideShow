@@ -30,7 +30,8 @@ two lines is shown in a progressively smaller font until it fits.
 
 Each Save appends a record to this session's output log, `SlideShow Output
 <date and time of the latest save>.json` in the program's directory (a new
-file per run): concatenated pretty-printed JSON objects holding the save
+file per run, created at the first save so a run with no saves leaves no
+file): concatenated pretty-printed JSON objects holding the save
 time, the photo's Piwigo id and file name (from its `.xml` companion), the
 album path, the editor (future), the faces with names and detection boxes,
 the comment, and the photo date (future).  Load with

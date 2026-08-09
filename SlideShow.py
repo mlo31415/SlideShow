@@ -54,7 +54,8 @@ script).
 
 Each Save appends a record to this session's output log, "SlideShow Output
 <date and time of the latest save>.json" in the program's directory (a new
-file per run): concatenated pretty-printed JSON objects holding the save
+file per run, created at the first save so a run with no saves leaves no
+file): concatenated pretty-printed JSON objects holding the save
 time, the photo's Piwigo id and file name (from its .xml companion), the
 album path, the editor (future), the faces with names and detection boxes,
 the comment, and the photo date (future).  Load with
@@ -221,14 +222,9 @@ class SlideShow(tk.Tk):
         self.identifyPanel=None         # The Identify Photo panel, when it is up
 
         # Each run gets its own output log of Identify Photo saves, next to the settings
-        # file; its name carries the date and time of the latest save (initially the
-        # startup time), and records are appended to it incrementally.
-        self.outputPath=os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                     f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
-        try:
-            open(self.outputPath, "w", encoding="utf-8").close()
-        except OSError:
-            pass
+        # file; its name carries the date and time of the latest save.  It is created
+        # only at the first save, so a run with no saves leaves no empty file behind.
+        self.outputPath=None
         self.lastInputTime=time.time()
         self.advanceAfterId=None        # Id of the pending after() call which advances to the next image
 
@@ -534,6 +530,9 @@ class SlideShow(tk.Tk):
     # carries the date and time of this latest save.
     def LogSave(self, record: dict) -> None:
         try:
+            if self.outputPath is None:     # This session's first save creates the file
+                self.outputPath=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                             f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
             text=json.dumps(record, indent=2, ensure_ascii=False)
             # Compact the four-number face boxes back onto one line for readability
             text=re.sub(r"\[\s+(-?\d+),\s+(-?\d+),\s+(-?\d+),\s+(-?\d+)\s+\]", r"[\1, \2, \3, \4]", text)
