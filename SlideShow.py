@@ -46,8 +46,9 @@ half, and shows the Identify Photo panel in the other: the faces found in the
 photo listed left-to-right, each with a box to enter the person's name, plus
 a box for other comments and corrections and one for the identifier's email
 address (remembered between saves while the user stays active, then forgotten
-after Email Timeout seconds of no input).  The other buttons are disabled
-while it is up.
+after Email Timeout seconds of no input).  Prev and Next stay live while the
+panel is up: they discard anything unsaved, move to the next photo, and
+rebuild the panel for it; Pause and Add Info are disabled.
 Face detection uses OpenCV's YuNet model (the .onnx file alongside this
 script).
 
@@ -223,8 +224,10 @@ class SlideShow(tk.Tk):
         self.histpos=-1
 
         self.paused=False
-        self.dialogOpen=False           # True while the Identify Photo panel is up
+        self.dialogOpen=False           # True while the Identify Photo panel (or a message) is up
         self.identifyPanel=None         # The Identify Photo panel, when it is up
+        self.identifyWasPaused=False    # The pause state to return to when it closes
+        self.CloseIdentifyPanel=None    # Closes the panel (set while it is up)
 
         # Each run gets its own output log of Identify Photo saves, next to the settings
         # file; its name carries the date and time of the latest save.  It is created
@@ -326,8 +329,8 @@ class SlideShow(tk.Tk):
         # Any user input resets the pause-timeout clock
         self.bind_all("<Key>", self.OnUserInput)
         self.bind_all("<Button>", self.OnUserInput)
-        self.bind("<Left>", lambda e: self.OnPrev())
-        self.bind("<Right>", lambda e: self.OnNext())
+        self.bind("<Left>", lambda e: self.OnArrowKey(False))
+        self.bind("<Right>", lambda e: self.OnArrowKey(True))
         self.bind("<Escape>", lambda e: self.destroy())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
@@ -921,17 +924,43 @@ class SlideShow(tk.Tk):
         self.UpdateButtonStates()
         self.ScheduleAdvance()
 
+    # Prev and Next work while the Identify Photo panel is up: anything typed there and
+    # not yet saved is discarded, the photo moves, and the panel is rebuilt for it.
     def OnNext(self) -> None:
-        if self.dialogOpen:
-            return                  # The arrow keys are inert while the Identify Photo panel is up
+        if self.dialogOpen and self.identifyPanel is None:
+            return                  # Some other dialog is up
+        if self.identifyPanel is not None:
+            self.CloseIdentifyPanel(restore=False)
+            self.NextImage()
+            self.OnAddInfo(reopening=True)
+            return
         self.NextImage()
         self.ScheduleAdvance()      # Restart the display-time clock
 
     def OnPrev(self) -> None:
-        if self.dialogOpen:
+        if self.dialogOpen and self.identifyPanel is None:
+            return
+        if self.identifyPanel is not None:
+            if self.histpos == 0:
+                return              # Nothing earlier to go to; leave the panel alone
+            self.CloseIdentifyPanel(restore=False)
+            self.PrevImage()
+            self.OnAddInfo(reopening=True)
             return
         self.PrevImage()
         self.ScheduleAdvance()
+
+    # The arrow keys drive Prev/Next, except while a name or comment is being typed,
+    # where they belong to the text cursor.  (focus_get() is None when the application
+    # is not the active window, so fall back to the toplevel's remembered focus.)
+    def OnArrowKey(self, forward: bool) -> None:
+        focused=self.focus_get() or self.focus_lastfor()
+        if isinstance(focused, (tk.Entry, tk.Text)):
+            return
+        if forward:
+            self.OnNext()
+        else:
+            self.OnPrev()
 
     # -------------------- Identify Photo --------------------
     # Detect the faces in a PIL image.  Returns a list of (x, y, w, h) boxes in
@@ -985,17 +1014,20 @@ class SlideShow(tk.Tk):
     # with a row for each face found (left-to-right), each with a box for the person's
     # name, then a box for general comments, and Save/Cancel -- takes the other.
     # While the panel is up the show is paused; when it closes, the show returns to
-    # whatever pause state it was in before.
-    def OnAddInfo(self) -> None:
+    # whatever pause state it was in before.  Prev and Next stay live: they discard
+    # whatever is unsaved, move the photo, and rebuild the panel for it (reopening=True
+    # then, so that the pause state to return to is the one from the first opening).
+    def OnAddInfo(self, reopening: bool=False) -> None:
         if self.identifyPanel is not None:
             return                      # Already open
-        wasPaused=self.paused
+        if not reopening:
+            self.identifyWasPaused=self.paused
         self.paused=True
         self.dialogOpen=True
         self.CancelAdvance()
         self.UpdateButtonStates()
-        # Prev/Next/Pause/Add Info make no sense while identifying -- the panel would go stale
-        for b in (self.prevButton, self.pauseButton, self.nextButton, self.addInfoButton):
+        # Pause and Add Info make no sense while identifying (Prev/Next stay live)
+        for b in (self.pauseButton, self.addInfoButton):
             b.config(state=tk.DISABLED)
 
         pathname=self.images[self.history[self.histpos]]
@@ -1091,21 +1123,24 @@ class SlideShow(tk.Tk):
         emailEntry.pack(side=tk.LEFT)
         emailEntry.insert(0, self.editorEmail)
 
-        def Close() -> None:
+        def Close(restore: bool=True) -> None:
             self.unbind_all("<MouseWheel>")
             panel.destroy()
             separator.destroy()
             self.identifyPanel=None
+            if not restore:
+                return                  # Moving to another photo; the panel is about to be rebuilt
             self.dialogOpen=False
-            for b in (self.prevButton, self.pauseButton, self.nextButton, self.addInfoButton):
+            for b in (self.pauseButton, self.addInfoButton):
                 b.config(state=tk.NORMAL)
             self.lastInputTime=time.time()
-            if wasPaused:
+            if self.identifyWasPaused:
                 self.UpdateButtonStates()
             else:
                 self.Resume()
             self.update_idletasks()
             self.ShowImage()            # Rescale the photo back to the full display
+        self.CloseIdentifyPanel=Close
 
         def OnSave() -> None:
             # The photo's Piwigo id and file name come from its .xml companion file

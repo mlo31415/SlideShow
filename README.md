@@ -24,9 +24,10 @@ two lines is shown in a progressively smaller font until it fits.
   in the photo listed left-to-right, each with a box to enter the person's
   name, plus a box for other comments and corrections and one for the
   identifier's email address.  The email address is remembered between saves
-  while the user stays active (see *Email Timeout*).  The other buttons are
-  disabled while the panel is up.  (Face detection uses OpenCV's YuNet model,
-  the .onnx file alongside the script.)
+  while the user stays active (see *Email Timeout*).  Prev and Next stay live
+  while the panel is up: they discard anything not yet saved, move to the next
+  photo, and rebuild the panel for it; Pause and Add Info are disabled.  (Face
+  detection uses OpenCV's YuNet model, the .onnx file alongside the script.)
 
 Each Save appends a record to this session's output log, `SlideShow Output
 <date and time of the latest save>.json` in the program's directory (a new
