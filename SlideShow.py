@@ -302,6 +302,8 @@ class SlideShow(tk.Tk):
         self.pauseButton=MakeButton("Pause", self.OnPauseContinue, "pause")     # Toggles between Pause and Continue
         self.nextButton=MakeButton("Next", self.OnNext, "next")
         self.addInfoButton=MakeButton("Add Info", self.OnAddInfo)
+        # Bigger and bold, to stand out from its neighbors
+        self.addInfoButton.configure(width=143, height=38, font=("Segoe UI", 12, "bold"))
 
         # The image and its caption are stacked in a frame which is centered in the
         # remaining space, so the caption sits directly below the image and moves with it.
