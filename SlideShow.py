@@ -431,16 +431,16 @@ class SlideShow(tk.Tk):
         return problems
 
 
-    # Report settings-file problems in a warning dialog.  Like the Add Info dialog, the
-    # show is held while it is up and returns to its previous pause state afterwards.
-    def ShowSettingsProblems(self, problems: list[str]) -> None:
+    # Show a message dialog.  Like the Add Info panel, the show is held while it is up
+    # and returns to its previous pause state afterwards.
+    def ShowMessage(self, title: str, message: str, warning: bool=False) -> None:
         wasPaused=self.paused
         self.paused=True
         self.dialogOpen=True
         self.CancelAdvance()
         self.UpdateButtonStates()
 
-        messagebox.showwarning("SlideShow settings", "Problems in the settings file:\n\n"+"\n".join(problems), parent=self)
+        (messagebox.showwarning if warning else messagebox.showinfo)(title, message, parent=self)
 
         self.dialogOpen=False
         self.lastInputTime=time.time()
@@ -448,6 +448,10 @@ class SlideShow(tk.Tk):
             self.UpdateButtonStates()
         else:
             self.Resume()
+
+    # Report settings-file problems in a warning dialog
+    def ShowSettingsProblems(self, problems: list[str]) -> None:
+        self.ShowMessage("SlideShow settings", "Problems in the settings file:\n\n"+"\n".join(problems), warning=True)
 
 
     # Find an installed font family by name, case-insensitive, first as an exact match and
@@ -583,12 +587,15 @@ class SlideShow(tk.Tk):
         newChecked=[d for i, d in enumerate(self.tlds) if self.showVars[i].get()]
         if len(newChecked) == 0:
             self.showVars[index].set(True)      # Undo the toggle
-            self.ShowSettingsProblems(["At least one photo show must be selected"])
+            self.ShowMessage("Select Photo Show",
+                             f'The slideshow needs at least one photo show, so "{os.path.basename(self.tlds[index])}" stays checked.\n\n'
+                             "To switch to a different show, check it first and then uncheck the others.")
             return
         images=self.ScanImages(newChecked)
         if len(images) == 0:
             self.showVars[index].set(not self.showVars[index].get())
-            self.ShowSettingsProblems(["The selected shows contain no images  (change undone)"])
+            self.ShowMessage("Select Photo Show",
+                             "That change would have left no photos to display, so it has been undone.", warning=True)
             return
         self.checkedTlds={os.path.normcase(d) for d in newChecked}
         self.images=images
