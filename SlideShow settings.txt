@@ -1,7 +1,8 @@
 # SlideShow settings
 
-# "Directories:" is followed by one directory path per line, each the root of a tree of
-# images to be displayed; the list ends at the first line which is not a valid directory
+# "Directories:" is followed by the path of the directory holding the photo shows: each
+# of its immediate subdirectories is a show, listed with a check box under Select Photo
+# Show; every checked show's whole tree is in the slideshow
 Directories:
 C:\Users\mlo\Documents\usr\Fancyclopedia\Python\SlideShow\Test photos
 

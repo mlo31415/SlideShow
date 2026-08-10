@@ -6,14 +6,13 @@ Displays a full-screen slideshow of the images found in a directory tree.
 The directory to be displayed and the other operating parameters are read from
 "SlideShow settings.txt" (name=value lines) in the program's directory:
 
-    Directories:          Starts a list of directory paths, one per line, each the root
-                          of a tree of images -- an available "photo show".  The list
-                          ends at the first line which is not a valid directory path.
-                          At least one directory is required.  The show selected last
-                          time (remembered in "SlideShow state.json") is reopened at
-                          startup if its directory is still listed, else the first is
-                          used; the Select Photo Show menu in the top bar switches
-                          between them.
+    Directories:          The next line is the path of the directory holding the photo
+                          shows: each of its immediate subdirectories (the TLDs) is an
+                          available show, listed with a check box in the Select Photo
+                          Show menu.  Every checked show's whole tree is in the
+                          slideshow.  The checked set is remembered between runs (in
+                          "SlideShow state.json"); TLDs that have vanished are dropped,
+                          and if none survive, all are checked.
     Order                 "Sequential" or "Random"  (default: Sequential)
     Display Time          Seconds each image is displayed  (default: 10)
     Title                 Title shown at the top  (default: "photos.fanac.org")
@@ -188,7 +187,8 @@ class SlideShow(tk.Tk):
         self.editorEmail=""             # Remembered between saves while the user stays active
 
         if len(self.rootDirectories) == 0:
-            self.Fatal(f"No directory paths are defined in '{settingsPath}'.\n\nThe settings file needs a 'Directories:' line followed by at least one existing directory path.")
+            self.Fatal(f"No directory path is defined in '{settingsPath}'.\n\nThe settings file needs a 'Directories:' line followed by the path of the directory holding the photo shows.")
+        self.rootDirectory=self.rootDirectories[0]      # Extra paths are reported by ValidateSettings
 
         # The settings file is monitored while running: changes to it are applied on the
         # fly, each parameter taking effect only if its value actually changed.
@@ -197,21 +197,26 @@ class SlideShow(tk.Tk):
         self.pendingSettings=None       # Newly-read settings awaiting a second identical read (debounce)
 
         # -------------------- Find the images --------------------
-        # The listed directories are the available photo shows; one is active at a time.
-        # The show selected last time is reopened if its directory is still in the list;
-        # otherwise the first directory is used.  The Select Photo Show menu switches.
+        # The immediate subdirectories of the root directory (the TLDs) are the available
+        # photo shows, each toggled by a check box in the Select Photo Show menu; every
+        # checked show's whole tree is in the slideshow.  The set checked last time is
+        # restored at startup (dropping TLDs that no longer exist); when none survive,
+        # all are checked.
+        self.tlds=self.FindTLDs(self.rootDirectory)
+        if len(self.tlds) == 0:
+            self.Fatal(f"No directories found inside '{self.rootDirectory}' -- there are no photo shows to display.")
         self.statePath=os.path.join(os.path.dirname(os.path.abspath(__file__)), STATE_FILE)
-        self.currentDirIndex=0
+        self.checkedTlds={os.path.normcase(d) for d in self.tlds}
         try:
             with open(self.statePath, "r", encoding="utf-8") as file:
-                saved=json.load(file).get("current directory", "")
-            self.currentDirIndex=next((i for i, d in enumerate(self.rootDirectories)
-                                       if os.path.normcase(d) == os.path.normcase(saved)), 0)
+                saved={os.path.normcase(d) for d in json.load(file).get("checked directories", [])}
+            if len(saved & self.checkedTlds) > 0:
+                self.checkedTlds&=saved
         except (OSError, json.JSONDecodeError):
             pass
-        self.images=self.ScanImages([self.rootDirectories[self.currentDirIndex]])
+        self.images=self.ScanImages(self.CheckedTldList())
         if len(self.images) == 0:
-            self.Fatal(f"No image files found under '{self.rootDirectories[self.currentDirIndex]}'.")
+            self.Fatal(f"No image files found in the photo shows under '{self.rootDirectory}'.")
 
         # History of images shown (indexes into self.images), so Prev can back up even in random order.
         self.history: list[int]=[]
@@ -253,7 +258,6 @@ class SlideShow(tk.Tk):
         self.showMenu=tk.Menu(self.showMenuButton, tearoff=False)
         self.showMenuButton.config(menu=self.showMenu)
         self.showMenuButton.pack(side=tk.LEFT, padx=6)
-        self.selectedShowVar=tk.IntVar(value=self.currentDirIndex)
         self.RebuildShowMenu()
 
         # Dragging the top bar moves the window, so it can be dropped on another monitor
@@ -417,6 +421,9 @@ class SlideShow(tk.Tk):
         if "mode" in settings and settings["mode"].casefold() not in THEMES:
             problems.append(f"Mode='{settings['mode']}' should be Dark or Light  (ignoring it)")
 
+        if len(settings.get("directories", [])) > 1:
+            problems.append("Directories: lists more than one path  (using the first)")
+
         fontName=settings.get("title font", "").strip()
         if len(fontName) > 0 and self.FindFontFamily(fontName) is None:
             problems.append(f"Title Font='{fontName}' is not an installed font  (using {DEFAULT_TITLE_FONT})")
@@ -516,13 +523,29 @@ class SlideShow(tk.Tk):
         self.dragging=False
 
 
-    # Rebuild the Select Photo Show menu from the current directory list.  Entries show
-    # just the directory names; the active one is checked.
+    # The immediate subdirectories of the root directory: the available photo shows
+    @staticmethod
+    def FindTLDs(rootDirectory: str) -> list[str]:
+        try:
+            return [os.path.join(rootDirectory, d) for d in sorted(os.listdir(rootDirectory), key=str.casefold)
+                    if os.path.isdir(os.path.join(rootDirectory, d))]
+        except OSError:
+            return []
+
+    # The checked TLDs, in TLD (sorted) order
+    def CheckedTldList(self) -> list[str]:
+        return [d for d in self.tlds if os.path.normcase(d) in self.checkedTlds]
+
+    # Rebuild the Select Photo Show menu: one check box per TLD, showing just the
+    # directory names, with the checked ones making up the slideshow
     def RebuildShowMenu(self) -> None:
         self.showMenu.delete(0, tk.END)
-        for i, d in enumerate(self.rootDirectories):
-            self.showMenu.add_radiobutton(label=os.path.basename(d.rstrip("\\/")) or d,
-                                          variable=self.selectedShowVar, value=i, command=self.OnSelectShow)
+        self.showVars=[]
+        for i, d in enumerate(self.tlds):
+            var=tk.BooleanVar(value=os.path.normcase(d) in self.checkedTlds)
+            self.showVars.append(var)
+            self.showMenu.add_checkbutton(label=os.path.basename(d), variable=var,
+                                          command=lambda i=i: self.OnToggleShow(i))
 
     # Append one Identify Photo save record to this session's output log -- a
     # pretty-printed JSON object followed by a blank line (concatenated JSON, loadable
@@ -546,25 +569,28 @@ class SlideShow(tk.Tk):
         except OSError as e:
             messagebox.showwarning("SlideShow", f"Could not write the output log:\n{e}", parent=self)
 
-    # Remember the selected show's directory between invocations
+    # Remember the checked shows between invocations
     def SaveState(self) -> None:
         try:
             with open(self.statePath, "w", encoding="utf-8") as file:
-                json.dump({"current directory": self.rootDirectories[self.currentDirIndex]}, file)
+                json.dump({"checked directories": self.CheckedTldList()}, file)
         except OSError:
             pass
 
-    # Switch the show to the directory picked from the menu
-    def OnSelectShow(self) -> None:
-        index=self.selectedShowVar.get()
-        if index == self.currentDirIndex:
+    # A show was checked or unchecked in the menu: recompute the slideshow from the
+    # union of the checked shows' trees
+    def OnToggleShow(self, index: int) -> None:
+        newChecked=[d for i, d in enumerate(self.tlds) if self.showVars[i].get()]
+        if len(newChecked) == 0:
+            self.showVars[index].set(True)      # Undo the toggle
+            self.ShowSettingsProblems(["At least one photo show must be selected"])
             return
-        images=self.ScanImages([self.rootDirectories[index]])
+        images=self.ScanImages(newChecked)
         if len(images) == 0:
-            self.selectedShowVar.set(self.currentDirIndex)      # Revert the check
-            self.ShowSettingsProblems([f"'{os.path.basename(self.rootDirectories[index])}' contains no images  (keeping the current show)"])
+            self.showVars[index].set(not self.showVars[index].get())
+            self.ShowSettingsProblems(["The selected shows contain no images  (change undone)"])
             return
-        self.currentDirIndex=index
+        self.checkedTlds={os.path.normcase(d) for d in newChecked}
         self.images=images
         self.history=[]
         self.histpos=-1
@@ -631,9 +657,9 @@ class SlideShow(tk.Tk):
     def ShowImage(self) -> None:
         pathname=self.images[self.history[self.histpos]]
 
-        # The optional subdirectory line: the path below the active show's directory, so
-        # photos in that directory itself show nothing, and deeper ones show e.g. "A" or "A/B"
-        subdir=os.path.relpath(os.path.dirname(pathname), self.rootDirectories[self.currentDirIndex])
+        # The optional subdirectory line: the path below the root directory (including
+        # the TLD name, so with several shows checked each photo shows which it is from)
+        subdir=os.path.relpath(os.path.dirname(pathname), self.rootDirectory)
         if not self.displaySubdirectory or subdir == ".":
             self.subdirLabel.config(text="")
         else:
@@ -805,31 +831,28 @@ class SlideShow(tk.Tk):
             self.randomOrder=False
         # else: unrecognized value -- keep the current setting
 
-        # A new directory list: if the active show's directory is still in the list, keep
-        # showing it undisturbed; otherwise switch to the first directory of the new list.
-        # (Paths in the list are valid directories by construction of the parse.)
+        # A new root directory: rediscover its TLDs and restart with all of them
+        # checked.  (The path is a valid directory by construction of the parse.)
         newDirectories=settings.get("directories", [])
         if len(newDirectories) == 0:
-            problems.append("No directory paths are defined  (keeping the current list)")
-        elif [os.path.normcase(d) for d in newDirectories] != [os.path.normcase(d) for d in self.rootDirectories]:
-            current=os.path.normcase(self.rootDirectories[self.currentDirIndex])
-            newIndex=next((i for i, d in enumerate(newDirectories) if os.path.normcase(d) == current), None)
-            if newIndex is not None:
-                self.rootDirectories=newDirectories
-                self.currentDirIndex=newIndex
-            else:
-                images=self.ScanImages([newDirectories[0]])
-                if len(images) == 0:
-                    problems.append(f"No image files found under '{newDirectories[0]}'  (keeping the current list)")
-                    return problems
-                self.rootDirectories=newDirectories
-                self.currentDirIndex=0
-                self.images=images
-                self.history=[]
-                self.histpos=-1
-                self.NextImage()
-                self.ScheduleAdvance()
-            self.selectedShowVar.set(self.currentDirIndex)
+            problems.append("No directory path is defined  (keeping the current one)")
+        elif os.path.normcase(newDirectories[0]) != os.path.normcase(self.rootDirectory):
+            tlds=self.FindTLDs(newDirectories[0])
+            if len(tlds) == 0:
+                problems.append(f"No directories found inside '{newDirectories[0]}'  (keeping the current one)")
+                return problems
+            images=self.ScanImages(tlds)
+            if len(images) == 0:
+                problems.append(f"No image files found in the photo shows under '{newDirectories[0]}'  (keeping the current one)")
+                return problems
+            self.rootDirectory=newDirectories[0]
+            self.tlds=tlds
+            self.checkedTlds={os.path.normcase(d) for d in tlds}
+            self.images=images
+            self.history=[]
+            self.histpos=-1
+            self.NextImage()
+            self.ScheduleAdvance()
             self.RebuildShowMenu()
             self.SaveState()
 
@@ -1089,7 +1112,7 @@ class SlideShow(tk.Tk):
                     photoFile=(xmlRoot.findtext("file") or "").strip() or photoFile
                 except (ET.ParseError, OSError):
                     pass
-            album=os.path.relpath(os.path.dirname(pathname), self.rootDirectories[self.currentDirIndex])
+            album=os.path.relpath(os.path.dirname(pathname), self.rootDirectory)
             album="" if album == "." else album.replace(os.sep, "/")
             self.editorEmail=emailEntry.get().strip()
             self.LogSave({

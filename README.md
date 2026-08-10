@@ -39,8 +39,8 @@ boxes, the comment, and the photo date (future).  Load with
 numbered #1, #2, … so a comment can refer to a face by its number.
 
 A top bar across the top of the screen holds the **Select Photo Show** menu at
-the left — one radio-checked entry per listed directory (directory names only);
-picking one switches the show to that tree — and a **✕** close box in the
+the left — one check box per photo show (directory names only); the slideshow
+is the union of the checked shows' trees — and a **✕** close box in the
 upper-right corner.
 
 Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = exit.
@@ -52,7 +52,7 @@ in the program's directory:
 
 | Name | Meaning | Default |
 |------|---------|---------|
-| Directories: | Starts a list of directory paths, one per line, each the root of a tree of images — an available photo show; the list ends at the first line which is not a valid directory path.  The show selected last time (remembered in `SlideShow state.json`) is reopened at startup if its directory is still listed, else the first is used | *(at least one required)* |
+| Directories: | The next line is the path of the directory holding the photo shows: each of its immediate subdirectories (the TLDs) is an available show, listed with a check box in the Select Photo Show menu.  Every checked show's whole tree is in the slideshow.  The checked set is remembered between runs (in `SlideShow state.json`) | *(required)* |
 | Order | `Sequential` or `Random` | Sequential |
 | Display Time | Seconds each image is shown | 10 |
 | Title | Title shown at the top | photos.fanac.org |
