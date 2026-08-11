@@ -304,7 +304,7 @@ class SlideShow(tk.Tk):
         self.prevButton=MakeButton("Prev", self.OnPrev, "prev")
         self.pauseButton=MakeButton("Pause", self.OnPauseContinue, "pause")     # Toggles between Pause and Continue
         self.nextButton=MakeButton("Next", self.OnNext, "next")
-        self.addInfoButton=MakeButton("Add Info", self.OnAddInfo)
+        self.addInfoButton=MakeButton("Add Info", self.OnAddInfo, "pencil")
         # Bigger and bold, to stand out from its neighbors
         self.addInfoButton.configure(width=143, height=38, font=("Segoe UI", 12, "bold"))
 
@@ -900,6 +900,18 @@ class SlideShow(tk.Tk):
         icons["play"]=ImageTk.PhotoImage(im)
         im, _=New(1)                                            # Transparent spacer
         icons["blank"]=ImageTk.PhotoImage(im)
+
+        # A writing pencil for Add Info, drawn a little larger to suit that button and
+        # supersampled so its diagonal edges come out smooth
+        size, ss=19, 4
+        big=Image.new("RGBA", (size*ss, size*ss), (0, 0, 0, 0))
+        d=ImageDraw.Draw(big)
+        def Scale(points):
+            return [(x*ss, y*ss) for x, y in points]
+        d.polygon(Scale([(2.0, 17.0), (7.0, 15.7), (3.3, 12.0)]), fill="black")                     # Point
+        d.polygon(Scale([(4.1, 11.4), (7.6, 14.9), (14.4, 8.1), (10.9, 4.6)]), fill="black")        # Body
+        d.polygon(Scale([(11.8, 3.7), (15.3, 7.2), (17.0, 5.5), (13.5, 2.0)]), fill="black")        # Eraser
+        icons["pencil"]=ImageTk.PhotoImage(big.resize((size, size), Image.LANCZOS))
         return icons
 
     # The one Pause/Continue button shows the action it will perform next
