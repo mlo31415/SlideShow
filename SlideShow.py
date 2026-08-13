@@ -141,6 +141,61 @@ def ReadSettings(pathname: str) -> dict[str, Any] | None:
     return settings
 
 
+# A small help balloon which appears when the pointer rests on a widget
+class ToolTip:
+    DELAY=600                   # Milliseconds the pointer must rest before the tip appears
+
+    def __init__(self, widget: tk.Widget, text: str) -> None:
+        self.widget=widget
+        self.text=text
+        self.afterId=None
+        self.window=None
+        widget.bind("<Enter>", self.OnEnter, add="+")
+        widget.bind("<Leave>", self.OnLeave, add="+")
+        widget.bind("<ButtonPress>", self.OnLeave, add="+")
+        widget.bind("<Destroy>", self.OnLeave, add="+")
+
+    def OnEnter(self, event=None) -> None:
+        self.Cancel()
+        self.afterId=self.widget.after(self.DELAY, self.Show)
+
+    def OnLeave(self, event=None) -> None:
+        self.Cancel()
+        self.Hide()
+
+    def Cancel(self) -> None:
+        if self.afterId is not None:
+            try:
+                self.widget.after_cancel(self.afterId)
+            except tk.TclError:
+                pass
+            self.afterId=None
+
+    def Show(self) -> None:
+        self.afterId=None
+        if self.window is not None or not self.widget.winfo_exists():
+            return
+        self.window=tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)        # No title bar or border
+        tk.Label(self.window, text=self.text, font=("Segoe UI", 10), justify=tk.LEFT, wraplength=380,
+                 bg="#ffffe0", fg="black", relief=tk.SOLID, bd=1, padx=6, pady=4).pack()
+        self.window.update_idletasks()
+        # Centered on the widget and above it, or below when there is no room above,
+        # kept within the screen either way
+        width, height=self.window.winfo_width(), self.window.winfo_height()
+        x=self.widget.winfo_rootx()+self.widget.winfo_width()//2-width//2
+        x=max(2, min(x, self.widget.winfo_screenwidth()-width-2))
+        y=self.widget.winfo_rooty()-height-8
+        if y < 2:
+            y=self.widget.winfo_rooty()+self.widget.winfo_height()+8
+        self.window.wm_geometry(f"+{x}+{y}")
+
+    def Hide(self) -> None:
+        if self.window is not None:
+            self.window.destroy()
+            self.window=None
+
+
 class SlideShow(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -307,6 +362,7 @@ class SlideShow(tk.Tk):
         self.addInfoButton=MakeButton("Add Info", self.OnAddInfo, "pencil")
         # Bigger and bold, to stand out from its neighbors
         self.addInfoButton.configure(width=143, height=38, font=("Segoe UI", 12, "bold"))
+        ToolTip(self.addInfoButton, "If you have anything to tell us about this photo, click here.")
 
         # The image and its caption are stacked in a frame which is centered in the
         # remaining space, so the caption sits directly below the image and moves with it.
@@ -1103,11 +1159,15 @@ class SlideShow(tk.Tk):
             for i, box in enumerate(boxes):
                 thumb=self.MakeFaceThumbnail(img, box, pbg)
                 panel.thumbnails.append(thumb)
-                tk.Label(table, text=f"#{i+1}", font=("Segoe UI", 12), fg=pfg, bg=pbg).grid(row=i+1, column=0, padx=(0, 8), sticky="e")
-                tk.Label(table, image=thumb, bg=pbg).grid(row=i+1, column=1, padx=(0, 12), pady=4)
+                numberLabel=tk.Label(table, text=f"#{i+1}", font=("Segoe UI", 12), fg=pfg, bg=pbg)
+                numberLabel.grid(row=i+1, column=0, padx=(0, 8), sticky="e")
+                faceLabel=tk.Label(table, image=thumb, bg=pbg)
+                faceLabel.grid(row=i+1, column=1, padx=(0, 12), pady=4)
                 entry=tk.Entry(table, font=("Segoe UI", 12), width=32)
                 entry.grid(row=i+1, column=2, sticky="w")
                 nameEntries.append(entry)
+                for w in (numberLabel, faceLabel, entry):
+                    ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)")
 
         # Size the canvas to the table, capped to leave room for the comments box and
         # buttons below; when capped, add the scrollbar and mouse-wheel scrolling
@@ -1122,18 +1182,24 @@ class SlideShow(tk.Tk):
             tableCanvas.bind_all("<MouseWheel>", lambda e: tableCanvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
 
         tk.Label(panel, text="", bg=pbg).pack()
-        tk.Label(panel, text="Other Comments and Corrections", font=("Segoe UI", 12), fg=pfg, bg=pbg).pack()
+        commentsLabel=tk.Label(panel, text="Other Comments and Corrections", font=("Segoe UI", 12), fg=pfg, bg=pbg)
+        commentsLabel.pack()
         commentsBox=tk.Text(panel, font=("Segoe UI", 11), width=48, height=4)
         commentsBox.pack(pady=(4, 0))
+        for w in (commentsLabel, commentsBox):
+            ToolTip(w, "Tell us more: When/where was the photo taken?  Who took it?  Other interesting details.")
 
         # The email address is remembered between saves as long as the user stays
         # active; OnTick forgets it after Email Timeout seconds without input
         emailRow=tk.Frame(panel, bg=pbg)
         emailRow.pack(pady=(8, 0))
-        tk.Label(emailRow, text="Your email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg).pack(side=tk.LEFT, padx=(0, 8))
+        emailLabel=tk.Label(emailRow, text="Your email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
+        emailLabel.pack(side=tk.LEFT, padx=(0, 8))
         emailEntry=tk.Entry(emailRow, font=("Segoe UI", 12), width=30)
         emailEntry.pack(side=tk.LEFT)
         emailEntry.insert(0, self.editorEmail)
+        for w in (emailLabel, emailEntry):
+            ToolTip(w, "Please let us know who is submitting this information, so we can give you credit.")
 
         def Close(restore: bool=True) -> None:
             self.unbind_all("<MouseWheel>")
