@@ -37,7 +37,9 @@ caption and an .xml holding photo information from Piwigo.  The caption shown
 under the image is the .txt content; if there is none, the image's filename
 without the extension is used.  A caption too long for its two lines first
 gets extra lines (up to about a quarter of the display area), then a
-progressively smaller font until it fits.
+progressively smaller font until it fits.  Below the caption, in smaller
+type, the .xml file's author and date are shown as "Photo supplied by ..."
+and "Photo date: ..." (each line omitted when that information is missing).
 
 Buttons: Prev, Pause/Continue (one button, toggling with the state), Next,
 Add Info.  A top bar holds a ✕ close box in the upper-right corner (and has
@@ -96,6 +98,8 @@ DEFAULT_TITLE_FONT_SIZE=32
 CAPTION_FONT_SIZE=22            # Normal caption size; long captions shrink from here...
 MIN_CAPTION_FONT_SIZE=12        # ...down to this, to fit the two caption lines
 CAPTION_LINES=2
+CREDIT_FONT_SMALLER=6           # The credit line under the caption is this much smaller than it
+MIN_CREDIT_FONT_SIZE=9
 SUBDIR_FONT_SIZE=28             # Normal album-line size; on a landscape single line it shrinks...
 MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then wraps below it
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
@@ -410,6 +414,12 @@ class SlideShow(tk.Tk):
                                 justify=tk.CENTER, height=CAPTION_LINES, wraplength=self.winfo_screenwidth()-100)
         self.descLabel.pack(side=tk.TOP)
 
+        # Under the caption, in smaller type: where the photo came from and its date
+        self.creditFont=tkfont.Font(family="Segoe UI", size=CAPTION_FONT_SIZE-CREDIT_FONT_SMALLER)
+        self.creditLabel=tk.Label(innerFrame, text="", font=self.creditFont, fg="white", bg="black",
+                                  justify=tk.CENTER, wraplength=self.winfo_screenwidth()-100)
+        self.creditLabel.pack(side=tk.TOP)
+
         self.ApplyTheme()
         self.UpdateButtonStates()
 
@@ -466,6 +476,7 @@ class SlideShow(tk.Tk):
         self.titleLabel.configure(bg=t["bg"], fg=t["titleFg"])
         self.subdirLabel.configure(bg=t["bg"], fg=t["subdirFg"])
         self.descLabel.configure(bg=t["bg"], fg=t["fg"])
+        self.creditLabel.configure(bg=t["bg"], fg=t["subdirFg"])
         self.topBar.configure(bg=t["barBg"])
         self.closeButton.configure(bg=t["barBg"], fg=t["barFg"], activebackground="#C42B1C", activeforeground="white")
         self.showMenuButton.configure(bg=t["barBg"], fg=t["barFg"], activebackground=t["barActiveBg"], activeforeground=t["barFg"])
@@ -816,11 +827,36 @@ class SlideShow(tk.Tk):
             lines=self.CountWrappedLines(desc, self.captionFont, wraplength)
         self.descLabel.config(text=desc, height=max(CAPTION_LINES, min(lines, MaxLines())))
 
+        # Below the caption, in smaller type, whatever the photo's .xml companion says
+        # about where the photo came from and when it was taken
+        author, photoDate="", ""
+        if os.path.exists(base+".xml"):
+            try:
+                xmlRoot=ET.parse(base+".xml").getroot()
+                author=(xmlRoot.findtext("author") or "").strip()
+                photoDate=(xmlRoot.findtext("date_creation") or "").strip().split(" ")[0]
+            except (ET.ParseError, OSError):
+                pass
+        credit=[]
+        if len(author) > 0:
+            credit.append(f"Photo supplied by {author}")
+        if len(photoDate) > 0:
+            credit.append(f"Photo date: {photoDate}")
+        self.creditFont.configure(size=max(MIN_CREDIT_FONT_SIZE, size-CREDIT_FONT_SMALLER))
+        if len(credit) == 0:
+            self.creditLabel.pack_forget()          # Nothing to say, so take up no room
+        else:
+            self.creditLabel.config(text="\n".join(credit), wraplength=wraplength)
+            if not self.creditLabel.winfo_ismapped():
+                self.creditLabel.pack(side=tk.TOP)
+
         # The image itself, scaled to fit the space left over after the caption below it
         try:
             img=Image.open(pathname)
             width=self.centerFrame.winfo_width()-20
             height=self.centerFrame.winfo_height()-self.descLabel.winfo_reqheight()-10
+            if len(credit) > 0:
+                height-=self.creditLabel.winfo_reqheight()
             if width < 50 or height < 50:       # Not laid out yet -- fall back to a guess
                 width=self.winfo_screenwidth()-40
                 height=self.winfo_screenheight()-300
