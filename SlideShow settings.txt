@@ -30,3 +30,7 @@ Mode=Dark
 
 # Seconds of no user input after which the remembered email address is forgotten
 Email Timeout=60
+
+# How sure the face detector must be before it calls something a face (0 to 1).
+# Lower finds more faces, including doubtful ones; higher finds only clear ones.
+Face Detection Threshold=0.6

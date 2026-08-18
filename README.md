@@ -63,6 +63,7 @@ in the program's directory:
 | Pause Timeout | Seconds of no user input after which a paused show resumes | 240 |
 | Mode | `Dark` or `Light` color scheme | Dark |
 | Email Timeout | Seconds of no user input after which the remembered email address is forgotten | 60 |
+| Face Detection Threshold | How sure the detector must be before it calls something a face, 0 to 1.  Lower finds more faces, including doubtful ones; higher finds only clear ones | 0.6 |
 
 A parameter value whose first non-blank character is `#` is treated as empty,
 and the parameter's default is used.

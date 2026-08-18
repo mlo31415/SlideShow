@@ -25,6 +25,9 @@ The directory to be displayed and the other operating parameters are read from
     Mode                  "Dark" or "Light" color scheme  (default: Dark)
     Email Timeout         Seconds of no user input after which the remembered
                           email address is forgotten  (default: 60)
+    Face Detection        How sure the detector must be before it calls something a
+      Threshold           face, 0 to 1: lower finds more faces, including doubtful
+                          ones; higher finds only clear ones  (default: 0.6)
 
 A parameter value whose first non-blank character is '#' is treated as empty,
 and the parameter's default is used.
@@ -95,7 +98,9 @@ MIN_CAPTION_FONT_SIZE=12        # ...down to this, to fit the two caption lines
 CAPTION_LINES=2
 SUBDIR_FONT_SIZE=28             # Normal album-line size; on a landscape single line it shrinks...
 MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then wraps below it
-KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout"}
+FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
+DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
+KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold"}
 
 # The color schemes for the Mode parameter (default: dark)
 THEMES={
@@ -241,6 +246,7 @@ class SlideShow(tk.Tk):
         if self.emailTimeout <= 0:
             self.emailTimeout=60.0
         self.editorEmail=""             # Remembered between saves while the user stays active
+        self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
 
         if len(self.rootDirectories) == 0:
             self.Fatal(f"No directory path is defined in '{settingsPath}'.\n\nThe settings file needs a 'Directories:' line followed by the path of the directory holding the photo shows.")
@@ -485,6 +491,14 @@ class SlideShow(tk.Tk):
         if len(settings.get("directories", [])) > 1:
             problems.append("Directories: lists more than one path  (using the first)")
 
+        if "face detection threshold" in settings:
+            value=settings["face detection threshold"]
+            try:
+                if not 0 < float(value) <= 1:
+                    problems.append(f"Face Detection Threshold='{value}' should be greater than 0 and no more than 1  (using {DEFAULT_FACE_THRESHOLD})")
+            except ValueError:
+                problems.append(f"Face Detection Threshold='{value}' should be a number  (using {DEFAULT_FACE_THRESHOLD})")
+
         fontName=settings.get("title font", "").strip()
         if len(fontName) > 0 and self.FindFontFamily(fontName) is None:
             problems.append(f"Title Font='{fontName}' is not an installed font  (using {DEFAULT_TITLE_FONT})")
@@ -514,6 +528,18 @@ class SlideShow(tk.Tk):
     def ShowSettingsProblems(self, problems: list[str]) -> None:
         self.ShowMessage("SlideShow settings", "Problems in the settings file:\n\n"+"\n".join(problems), warning=True)
 
+
+    # Turn the "Face Detection Threshold" parameter value into a usable confidence
+    # (0 < t <= 1), falling back to the default for a missing or unusable value
+    @staticmethod
+    def ResolveFaceThreshold(value: str) -> float:
+        try:
+            threshold=float(value)
+        except ValueError:
+            return DEFAULT_FACE_THRESHOLD
+        if threshold <= 0 or threshold > 1:
+            return DEFAULT_FACE_THRESHOLD
+        return threshold
 
     # Find an installed font family by name, case-insensitive, first as an exact match and
     # then as a prefix (so "Hobo" will find an installed "Hobo Std").  None if no match.
@@ -887,6 +913,8 @@ class SlideShow(tk.Tk):
         if emailTimeout > 0:
             self.emailTimeout=emailTimeout
 
+        self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
+
         mode=Get("Mode", "Dark").casefold()
         if mode in THEMES and THEMES[mode] is not self.theme:
             self.theme=THEMES[mode]
@@ -1051,11 +1079,11 @@ class SlideShow(tk.Tk):
         # Detect on a downscaled copy for speed, then scale the boxes back up
         scale=1.0
         det=img
-        if max(img.size) > 1024:
-            scale=1024/max(img.size)
+        if max(img.size) > FACE_DETECT_MAXDIM:
+            scale=FACE_DETECT_MAXDIM/max(img.size)
             det=img.resize((round(img.width*scale), round(img.height*scale)), Image.LANCZOS)
         arr=cv2.cvtColor(np.array(det), cv2.COLOR_RGB2BGR)
-        detector=cv2.FaceDetectorYN.create(modelPath, "", (det.width, det.height), 0.6)
+        detector=cv2.FaceDetectorYN.create(modelPath, "", (det.width, det.height), self.faceThreshold)
         _, faces=detector.detect(arr)
         if faces is None:
             return []
