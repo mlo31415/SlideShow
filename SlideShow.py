@@ -40,6 +40,8 @@ gets extra lines (up to about a quarter of the display area), then a
 progressively smaller font until it fits.  Below the caption, in smaller
 type, the .xml file's author and date are shown as "Photo supplied by ..."
 and "Photo date: ..." (each line omitted when that information is missing).
+Dates are shown readably ("June 4, 1942"); a January 1st date is Piwigo's
+way of saying only the year is known, so it shows as just the year.
 
 Buttons: Prev, Pause/Continue (one button, toggling with the state), Next,
 Add Info.  A top bar holds a ✕ close box in the upper-right corner (and has
@@ -100,6 +102,8 @@ MIN_CAPTION_FONT_SIZE=12        # ...down to this, to fit the two caption lines
 CAPTION_LINES=2
 CREDIT_FONT_SMALLER=6           # The credit line under the caption is this much smaller than it
 MIN_CREDIT_FONT_SIZE=9
+MONTHS=["January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"]
 SUBDIR_FONT_SIZE=28             # Normal album-line size; on a landscape single line it shrinks...
 MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then wraps below it
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
@@ -720,6 +724,23 @@ class SlideShow(tk.Tk):
         self.ScheduleAdvance()
         self.SaveState()
 
+    # Turn a Piwigo date ("1942-06-04 00:00:00") into something readable
+    # ("June 4, 1942").  January 1st is Piwigo's way of saying that only the year is
+    # known, so such a date is shown as just the year.  Anything unrecognizable is
+    # passed through as it stands.
+    @staticmethod
+    def FormatPhotoDate(value: str) -> str:
+        date=value.strip().split(" ")[0]
+        parts=date.split("-")
+        if len(parts) != 3 or not all(part.isdigit() for part in parts):
+            return date
+        year, month, day=(int(part) for part in parts)
+        if month == 1 and day == 1:
+            return str(year)
+        if not 1 <= month <= 12:
+            return date
+        return f"{MONTHS[month-1]} {day}, {year}"
+
     # Count the display lines 'text' will occupy in 'font' when word-wrapped to a width
     # of 'width' pixels (mirroring tk's own wrapping).  A caption overflows the display
     # when this exceeds CAPTION_LINES.
@@ -834,7 +855,7 @@ class SlideShow(tk.Tk):
             try:
                 xmlRoot=ET.parse(base+".xml").getroot()
                 author=(xmlRoot.findtext("author") or "").strip()
-                photoDate=(xmlRoot.findtext("date_creation") or "").strip().split(" ")[0]
+                photoDate=self.FormatPhotoDate(xmlRoot.findtext("date_creation") or "")
             except (ET.ParseError, OSError):
                 pass
         credit=[]

@@ -12,7 +12,9 @@ image's filename without the extension is used.  A caption too long for its
 two lines is shown in a progressively smaller font until it fits.  Below the
 caption, in smaller type, the `.xml` file's author and date are shown as
 "Photo supplied by …" and "Photo date: …" (each line omitted when that
-information is missing).
+information is missing).  Dates are shown readably ("June 4, 1942"); a
+January 1st date is Piwigo's way of saying only the year is known, so it
+shows as just the year.
 
 ## Buttons
 
