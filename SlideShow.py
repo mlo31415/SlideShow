@@ -43,7 +43,7 @@ and "Photo date: ..." (each line omitted when that information is missing).
 Dates are shown readably ("June 4, 1942"); a January 1st date is Piwigo's
 way of saying only the year is known, so it shows as just the year.
 
-Buttons: Prev, Pause/Continue (one button, toggling with the state), Next,
+Buttons: Prev, Pause/Start Slideshow (one button, toggling with the state), Next,
 Add Info.  A top bar holds a ✕ close box in the upper-right corner (and has
 room for future menu items).
 Keyboard shortcuts: left/right arrows for Prev/Next, Esc to exit.
@@ -389,18 +389,19 @@ class SlideShow(tk.Tk):
         # that they all size and align identically
         self.buttonIcons=self.MakeButtonIcons()
 
+        # Wide enough for the longest label ("Start Slideshow"), all alike
         def MakeButton(text: str, command, icon: str="blank") -> tk.Button:
             b=tk.Button(buttonFrame, text=" "+text if icon != "blank" else text, image=self.buttonIcons[icon],
-                        compound=tk.LEFT, command=command, font=("Segoe UI", 12), width=110)
+                        compound=tk.LEFT, command=command, font=("Segoe UI", 12), width=145)
             b.pack(side=tk.LEFT, padx=8)
             return b
 
         self.prevButton=MakeButton("Prev", self.OnPrev, "prev")
-        self.pauseButton=MakeButton("Pause", self.OnPauseContinue, "pause")     # Toggles between Pause and Continue
+        self.pauseButton=MakeButton("Pause", self.OnPauseContinue, "pause")     # Toggles with the state
         self.nextButton=MakeButton("Next", self.OnNext, "next")
         self.addInfoButton=MakeButton("Add Info", self.OnAddInfo, "pencil")
         # Bigger and bold, to stand out from its neighbors
-        self.addInfoButton.configure(width=143, height=38, font=("Segoe UI", 12, "bold"))
+        self.addInfoButton.configure(width=191, height=38, font=("Segoe UI", 12, "bold"))
         ToolTip(self.addInfoButton, "If you have anything to tell us about this photo, click here.")
 
         # The image and its caption are stacked in a frame which is centered in the
@@ -1075,7 +1076,7 @@ class SlideShow(tk.Tk):
     # The one Pause/Continue button shows the action it will perform next
     def UpdateButtonStates(self) -> None:
         if self.paused:
-            self.pauseButton.config(text=" Continue", image=self.buttonIcons["play"])
+            self.pauseButton.config(text=" Start Slideshow", image=self.buttonIcons["play"])
         else:
             self.pauseButton.config(text=" Pause", image=self.buttonIcons["pause"])
 

@@ -19,9 +19,9 @@ shows as just the year.
 ## Buttons
 
 * **Prev** — move to the previous image shown
-* **Pause / Continue** — one button which toggles with the state: it stops the
-  advancing (resuming on its own after *Pause Timeout* seconds without user
-  input), or resumes it
+* **Pause / Start Slideshow** — one button which toggles with the state: it
+  stops the advancing (resuming on its own after *Pause Timeout* seconds
+  without user input), or starts it again
 * **Next** — move to the next image
 * **Add Info** — splits the window in two the narrow way (left/right halves
   on a landscape screen, top/bottom on a portrait one), shoves the photo into
