@@ -1307,9 +1307,9 @@ class SlideShow(tk.Tk):
             ToolTip(w, "If you know when this photo was taken, tell us here.  A year alone is fine.")
 
         # The email address is remembered between saves as long as the user stays
-        # active; OnTick forgets it after Email Timeout seconds without input
+        # active; OnTick forgets it after Email Timeout seconds without input.  (It is
+        # created here but packed below the buttons, further down.)
         emailRow=tk.Frame(panel, bg=pbg)
-        emailRow.pack(pady=(8, 0))
         emailLabel=tk.Label(emailRow, text="Your name/email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
         emailLabel.pack(side=tk.LEFT, padx=(0, 8))
         emailVar=tk.StringVar(value=self.editorEmail)       # Prefilled, so it only counts as input once changed
@@ -1372,6 +1372,8 @@ class SlideShow(tk.Tk):
         tk.Button(buttons, text="Save", font=("Segoe UI", 12), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
         cancelButton=tk.Button(buttons, text="Close", font=("Segoe UI", 12), width=9, command=Close)
         cancelButton.pack(side=tk.LEFT, padx=8)
+
+        emailRow.pack(pady=(30, 0))     # Below the buttons, set apart from them
 
         # That button discards whatever has been entered, so it says "Cancel" once
         # there is something to discard and "Close" while every box is still empty
