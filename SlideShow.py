@@ -1195,6 +1195,7 @@ class SlideShow(tk.Tk):
         tk.Label(table, text="Name", font=("Segoe UI", 12), fg=pfg, bg=pbg).grid(row=0, column=2, sticky="w")
         panel.thumbnails=[]             # Keep references so tk doesn't garbage-collect the images
         nameEntries=[]
+        inputVars=[]                    # Watched so the Cancel button can tell whether anything was entered
         if boxes is None:
             tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=3)
         elif len(boxes) == 0:
@@ -1208,7 +1209,9 @@ class SlideShow(tk.Tk):
                 numberLabel.grid(row=i+1, column=0, padx=(0, 8), sticky="e")
                 faceLabel=tk.Label(table, image=thumb, bg=pbg)
                 faceLabel.grid(row=i+1, column=1, padx=(0, 12), pady=4)
-                entry=tk.Entry(table, font=("Segoe UI", 12), width=32)
+                var=tk.StringVar()
+                inputVars.append(var)
+                entry=tk.Entry(table, font=("Segoe UI", 12), width=32, textvariable=var)
                 entry.grid(row=i+1, column=2, sticky="w")
                 nameEntries.append(entry)
                 for w in (numberLabel, faceLabel, entry):
@@ -1239,7 +1242,9 @@ class SlideShow(tk.Tk):
         dateRow.pack(pady=(8, 0))
         dateLabel=tk.Label(dateRow, text="Photo Date:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
         dateLabel.pack(side=tk.LEFT, padx=(0, 8))
-        dateEntry=tk.Entry(dateRow, font=("Segoe UI", 12), width=30)
+        dateVar=tk.StringVar()
+        inputVars.append(dateVar)
+        dateEntry=tk.Entry(dateRow, font=("Segoe UI", 12), width=30, textvariable=dateVar)
         dateEntry.pack(side=tk.LEFT)
         for w in (dateLabel, dateEntry):
             ToolTip(w, "If you know when this photo was taken, tell us here.  A year alone is fine.")
@@ -1250,9 +1255,10 @@ class SlideShow(tk.Tk):
         emailRow.pack(pady=(8, 0))
         emailLabel=tk.Label(emailRow, text="Your name/email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
         emailLabel.pack(side=tk.LEFT, padx=(0, 8))
-        emailEntry=tk.Entry(emailRow, font=("Segoe UI", 12), width=30)
+        emailVar=tk.StringVar(value=self.editorEmail)       # Prefilled, so it only counts as input once changed
+        prefilledEmail=self.editorEmail
+        emailEntry=tk.Entry(emailRow, font=("Segoe UI", 12), width=30, textvariable=emailVar)
         emailEntry.pack(side=tk.LEFT)
-        emailEntry.insert(0, self.editorEmail)
         for w in (emailLabel, emailEntry):
             ToolTip(w, "Please let us know who is submitting this information, so we can give you credit.")
 
@@ -1307,7 +1313,25 @@ class SlideShow(tk.Tk):
         buttons=tk.Frame(panel, bg=pbg)
         buttons.pack(pady=15)
         tk.Button(buttons, text="Save", font=("Segoe UI", 12), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
-        tk.Button(buttons, text="Cancel", font=("Segoe UI", 12), width=9, command=Close).pack(side=tk.LEFT, padx=8)
+        cancelButton=tk.Button(buttons, text="Close", font=("Segoe UI", 12), width=9, command=Close)
+        cancelButton.pack(side=tk.LEFT, padx=8)
+
+        # That button discards whatever has been entered, so it says "Cancel" once
+        # there is something to discard and "Close" while every box is still empty
+        def UpdateCancelLabel(*args) -> None:
+            entered=(any(len(v.get().strip()) > 0 for v in inputVars)
+                     or len(commentsBox.get("1.0", tk.END).strip()) > 0
+                     or emailVar.get().strip() != prefilledEmail)
+            cancelButton.config(text="Cancel" if entered else "Close")
+
+        for var in inputVars+[emailVar]:
+            var.trace_add("write", UpdateCancelLabel)
+        def OnCommentsModified(event=None) -> None:
+            if commentsBox.edit_modified():
+                commentsBox.edit_modified(False)        # Rearm, and do not recurse on the reset
+                UpdateCancelLabel()
+        commentsBox.bind("<<Modified>>", OnCommentsModified)
+        UpdateCancelLabel()
 
 
 def main() -> None:
