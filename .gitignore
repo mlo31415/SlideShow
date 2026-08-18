@@ -20,3 +20,11 @@ dist/
 # Runtime / per-user state
 SlideShow state.json
 SlideShow Output *.json
+
+# Working notes
+*.docx
+
+# Photo data folders.  Their names vary, so rather than listing them, ignore every
+# directory here: the project itself is all top-level files.  (Should a real source
+# directory ever be added, exempt it with a "!/name/" line below.)
+/*/
