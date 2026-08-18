@@ -43,6 +43,9 @@ and "Photo date: ..." (each line omitted when that information is missing).
 Dates are shown readably ("June 4, 1942"); a January 1st date is Piwigo's
 way of saying only the year is known, so it shows as just the year.
 
+The show opens on the monitor it was on last time (remembered in "SlideShow
+state.json"); if that monitor is gone, it opens on the main one instead.
+
 Buttons: Prev, Pause/Start Slideshow (one button, toggling with the state), Next,
 Add Info.  A top bar holds a ✕ close box in the upper-right corner (and has
 room for future menu items).
@@ -302,11 +305,16 @@ class SlideShow(tk.Tk):
             self.Fatal(f"No directories found inside '{self.rootDirectory}' -- there are no photo shows to display.")
         self.statePath=os.path.join(os.path.dirname(os.path.abspath(__file__)), STATE_FILE)
         self.checkedTlds={os.path.normcase(d) for d in self.tlds}
+        self.savedMonitor=None          # The monitor the show was on last time, if it was recorded
         try:
             with open(self.statePath, "r", encoding="utf-8") as file:
-                saved={os.path.normcase(d) for d in json.load(file).get("checked directories", [])}
+                state=json.load(file)
+            saved={os.path.normcase(d) for d in state.get("checked directories", [])}
             if len(saved & self.checkedTlds) > 0:
                 self.checkedTlds&=saved
+            monitor=state.get("monitor")
+            if isinstance(monitor, list) and len(monitor) == 4:
+                self.savedMonitor=tuple(monitor)
         except (OSError, json.JSONDecodeError):
             pass
         self.images=self.ScanImages(self.CheckedTldList())
@@ -494,6 +502,14 @@ class SlideShow(tk.Tk):
 
 
     def Start(self) -> None:
+        # Reappear on the monitor the show was on last time.  If that monitor is gone,
+        # MonitorFromPoint answers with a different one, and the main monitor is used.
+        if self.savedMonitor is not None:
+            rect=self.savedMonitor
+            center=((rect[0]+rect[2])//2, (rect[1]+rect[3])//2)
+            if MonitorRect(center[0], center[1], self) != rect:
+                rect=MonitorRect(0, 0, self)        # The main monitor: it always starts at the origin
+            self.PlaceOnMonitor(rect)
         self.NextImage()
         self.ScheduleAdvance()
         self.OnTick()
@@ -633,18 +649,30 @@ class SlideShow(tk.Tk):
         if self.dragging:
             self.attributes("-fullscreen", True)
             self.update_idletasks()
-            try:
-                import ctypes
-                left, top, right, bottom=MonitorRect(event.x_root, event.y_root, self)
-                hwnd=ctypes.windll.user32.GetAncestor(self.winfo_id(), 2)       # GA_ROOT
-                ctypes.windll.user32.SetWindowPos(hwnd, 0, left, top, right-left, bottom-top, 0x0014)   # SWP_NOZORDER | SWP_NOACTIVATE
-                self.descLabel.config(wraplength=(right-left)-100)              # The new monitor may be a different width
-            except Exception:
-                pass                    # If the Windows API is unavailable we are at least fullscreen somewhere
-            self.update_idletasks()
-            self.ShowImage()            # Rescale to the new monitor (also refits the header)
+            self.PlaceOnMonitor(MonitorRect(event.x_root, event.y_root, self))
+            self.SaveState()            # So the show comes back to this monitor next time
         self.dragStart=None
         self.dragging=False
+
+    # Fill the given monitor.  (tk's -fullscreen always uses the monitor the window
+    # started on, so the window is placed on the wanted one with the Windows API.)
+    def PlaceOnMonitor(self, rect: tuple[int, int, int, int]) -> None:
+        left, top, right, bottom=rect
+        try:
+            import ctypes
+            hwnd=ctypes.windll.user32.GetAncestor(self.winfo_id(), 2)          # GA_ROOT
+            ctypes.windll.user32.SetWindowPos(hwnd, 0, left, top, right-left, bottom-top, 0x0014)   # SWP_NOZORDER | SWP_NOACTIVATE
+            self.descLabel.config(wraplength=(right-left)-100)                 # This monitor may be a different width
+        except Exception:
+            pass                        # If the Windows API is unavailable we are at least fullscreen somewhere
+        self.update_idletasks()
+        if len(self.history) > 0:
+            self.ShowImage()            # Rescale to this monitor (also refits the header)
+
+    # The monitor the window is on at the moment
+    def CurrentMonitor(self) -> tuple[int, int, int, int]:
+        return MonitorRect(self.winfo_rootx()+self.winfo_width()//2,
+                           self.winfo_rooty()+self.winfo_height()//2, self)
 
 
     # The immediate subdirectories of the root directory: the available photo shows
@@ -693,13 +721,20 @@ class SlideShow(tk.Tk):
         except OSError as e:
             messagebox.showwarning("SlideShow", f"Could not write the output log:\n{e}", parent=self)
 
-    # Remember the checked shows between invocations
+    # Remember the checked shows and the monitor in use between invocations
     def SaveState(self) -> None:
         try:
             with open(self.statePath, "w", encoding="utf-8") as file:
-                json.dump({"checked directories": self.CheckedTldList()}, file)
-        except OSError:
+                json.dump({"checked directories": self.CheckedTldList(),
+                           "monitor": list(self.CurrentMonitor())}, file)
+        except (OSError, tk.TclError, AttributeError):
             pass
+
+    # Record the monitor on the way out, so a window moved by other means (a Windows
+    # shortcut, say) is still remembered
+    def destroy(self) -> None:
+        self.SaveState()
+        super().destroy()
 
     # A show was checked or unchecked in the menu: recompute the slideshow from the
     # union of the checked shows' trees

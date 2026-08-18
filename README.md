@@ -44,6 +44,10 @@ detection boxes, the comment, and the photo date.  Load with
 `json.JSONDecoder().raw_decode` in a loop.  The face rows in the panel are
 numbered #1, #2, … so a comment can refer to a face by its number.
 
+The show opens on the monitor it was on last time (remembered in `SlideShow
+state.json`); if that monitor is gone, it opens on the main one instead.
+Dragging the top bar moves the window to another monitor.
+
 A top bar across the top of the screen holds the **Select Photo Show** menu at
 the left — one check box per photo show (directory names only); the slideshow
 is the union of the checked shows' trees — and a **✕** close box in the
