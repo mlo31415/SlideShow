@@ -22,8 +22,8 @@ two lines is shown in a progressively smaller font until it fits.
   on a landscape screen, top/bottom on a portrait one), shoves the photo into
   one half, and shows the Identify Photo panel in the other: the faces found
   in the photo listed left-to-right, each with a box to enter the person's
-  name, plus a box for other comments and corrections and one for the
-  identifier's email address.  The email address is remembered between saves
+  name, plus boxes for other comments and corrections, the photo's date, and
+  the identifier's name or email address.  The email address is remembered between saves
   while the user stays active (see *Email Timeout*).  Prev and Next stay live
   while the panel is up: they discard anything not yet saved, move to the next
   photo, and rebuild the panel for it; Pause and Add Info are disabled.  (Face
@@ -34,8 +34,8 @@ Each Save appends a record to this session's output log, `SlideShow Output
 file per run, created at the first save so a run with no saves leaves no
 file): concatenated pretty-printed JSON objects holding the save
 time, the photo's Piwigo id and file name (from its `.xml` companion), the
-album path, the editor's email, the numbered faces with names and detection
-boxes, the comment, and the photo date (future).  Load with
+album path, the editor's name or email, the numbered faces with names and
+detection boxes, the comment, and the photo date.  Load with
 `json.JSONDecoder().raw_decode` in a loop.  The face rows in the panel are
 numbered #1, #2, … so a comment can refer to a face by its number.
 

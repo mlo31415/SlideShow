@@ -60,8 +60,8 @@ Each Save appends a record to this session's output log, "SlideShow Output
 file per run, created at the first save so a run with no saves leaves no
 file): concatenated pretty-printed JSON objects holding the save
 time, the photo's Piwigo id and file name (from its .xml companion), the
-album path, the editor's email, the numbered faces with names and detection
-boxes, the comment, and the photo date (future).  Load with
+album path, the editor's name or email, the numbered faces with names and
+detection boxes, the comment, and the photo date.  Load with
 json.JSONDecoder().raw_decode in a loop.
 
 The settings file is monitored while the show is running: saving a change to it
@@ -1219,7 +1219,7 @@ class SlideShow(tk.Tk):
         self.update_idletasks()
         tableWidth=table.winfo_reqwidth()
         tableHeight=table.winfo_reqheight()
-        maxTableHeight=max(150, panelHeight-390)
+        maxTableHeight=max(150, panelHeight-430)
         tableCanvas.configure(width=tableWidth, height=min(tableHeight, maxTableHeight),
                               scrollregion=(0, 0, tableWidth, tableHeight))
         if tableHeight > maxTableHeight:
@@ -1233,6 +1233,15 @@ class SlideShow(tk.Tk):
         commentsBox.pack(pady=(4, 0))
         for w in (commentsLabel, commentsBox):
             ToolTip(w, "Tell us more: When/where was the photo taken?  Who took it?  Other interesting details.")
+
+        dateRow=tk.Frame(panel, bg=pbg)
+        dateRow.pack(pady=(8, 0))
+        dateLabel=tk.Label(dateRow, text="Photo Date:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
+        dateLabel.pack(side=tk.LEFT, padx=(0, 8))
+        dateEntry=tk.Entry(dateRow, font=("Segoe UI", 12), width=30)
+        dateEntry.pack(side=tk.LEFT)
+        for w in (dateLabel, dateEntry):
+            ToolTip(w, "If you know when this photo was taken, tell us here.  A year alone is fine.")
 
         # The email address is remembered between saves as long as the user stays
         # active; OnTick forgets it after Email Timeout seconds without input
@@ -1290,7 +1299,7 @@ class SlideShow(tk.Tk):
                 "editor":     self.editorEmail,
                 "faces":      [{"number": i+1, "name": e.get().strip(), "box": list(box)} for i, (e, box) in enumerate(zip(nameEntries, boxes or []))],
                 "comment":    commentsBox.get("1.0", tk.END).strip(),
-                "photo date": "",       # Editing the photo's date is yet to come
+                "photo date": dateEntry.get().strip(),
             })
             Close()
 
