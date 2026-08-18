@@ -32,5 +32,6 @@ Mode=Dark
 Email Timeout=60
 
 # How sure the face detector must be before it calls something a face (0 to 1).
+# 0.6 is the initial setting.
 # Lower finds more faces, including doubtful ones; higher finds only clear ones.
-Face Detection Threshold=0.6
+Face Detection Threshold=0.45
