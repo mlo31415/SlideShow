@@ -1221,7 +1221,7 @@ class SlideShow(tk.Tk):
         # active; OnTick forgets it after Email Timeout seconds without input
         emailRow=tk.Frame(panel, bg=pbg)
         emailRow.pack(pady=(8, 0))
-        emailLabel=tk.Label(emailRow, text="Your email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
+        emailLabel=tk.Label(emailRow, text="Your name/email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
         emailLabel.pack(side=tk.LEFT, padx=(0, 8))
         emailEntry=tk.Entry(emailRow, font=("Segoe UI", 12), width=30)
         emailEntry.pack(side=tk.LEFT)
