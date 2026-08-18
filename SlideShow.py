@@ -146,6 +146,27 @@ def ReadSettings(pathname: str) -> dict[str, Any] | None:
     return settings
 
 
+# The screen rectangle (left, top, right, bottom) of the monitor containing a point.
+# tk's screen dimensions describe only the primary monitor, so anything which has to
+# stay on the monitor the window is actually on must ask Windows.
+def MonitorRect(x: int, y: int, widget: tk.Misc) -> tuple[int, int, int, int]:
+    try:
+        import ctypes
+        from ctypes import wintypes
+        class MONITORINFO(ctypes.Structure):
+            _fields_=[("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                      ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+        hmon=ctypes.windll.user32.MonitorFromPoint(wintypes.POINT(x, y), 2)     # MONITOR_DEFAULTTONEAREST
+        mi=MONITORINFO()
+        mi.cbSize=ctypes.sizeof(MONITORINFO)
+        if ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            r=mi.rcMonitor
+            return r.left, r.top, r.right, r.bottom
+    except Exception:
+        pass
+    return 0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight()
+
+
 # A small help balloon which appears when the pointer rests on a widget
 class ToolTip:
     DELAY=600                   # Milliseconds the pointer must rest before the tip appears
@@ -186,13 +207,17 @@ class ToolTip:
                  bg="#ffffe0", fg="black", relief=tk.SOLID, bd=1, padx=6, pady=4).pack()
         self.window.update_idletasks()
         # Centered on the widget and above it, or below when there is no room above,
-        # kept within the screen either way
+        # kept within the monitor the widget is on (which need not be the primary one)
         width, height=self.window.winfo_width(), self.window.winfo_height()
+        left, top, right, bottom=MonitorRect(self.widget.winfo_rootx()+self.widget.winfo_width()//2,
+                                             self.widget.winfo_rooty()+self.widget.winfo_height()//2, self.widget)
         x=self.widget.winfo_rootx()+self.widget.winfo_width()//2-width//2
-        x=max(2, min(x, self.widget.winfo_screenwidth()-width-2))
+        x=max(left+2, min(x, right-width-2))
         y=self.widget.winfo_rooty()-height-8
-        if y < 2:
+        if y < top+2:
             y=self.widget.winfo_rooty()+self.widget.winfo_height()+8
+        if y+height > bottom-2:
+            y=max(top+2, bottom-height-2)
         self.window.wm_geometry(f"+{x}+{y}")
 
     def Hide(self) -> None:
@@ -594,18 +619,10 @@ class SlideShow(tk.Tk):
             self.update_idletasks()
             try:
                 import ctypes
-                from ctypes import wintypes
-                class MONITORINFO(ctypes.Structure):
-                    _fields_=[("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
-                              ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
-                hmon=ctypes.windll.user32.MonitorFromPoint(wintypes.POINT(event.x_root, event.y_root), 2)    # MONITOR_DEFAULTTONEAREST
-                mi=MONITORINFO()
-                mi.cbSize=ctypes.sizeof(MONITORINFO)
-                ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi))
-                r=mi.rcMonitor
+                left, top, right, bottom=MonitorRect(event.x_root, event.y_root, self)
                 hwnd=ctypes.windll.user32.GetAncestor(self.winfo_id(), 2)       # GA_ROOT
-                ctypes.windll.user32.SetWindowPos(hwnd, 0, r.left, r.top, r.right-r.left, r.bottom-r.top, 0x0014)   # SWP_NOZORDER | SWP_NOACTIVATE
-                self.descLabel.config(wraplength=(r.right-r.left)-100)          # The new monitor may be a different width
+                ctypes.windll.user32.SetWindowPos(hwnd, 0, left, top, right-left, bottom-top, 0x0014)   # SWP_NOZORDER | SWP_NOACTIVATE
+                self.descLabel.config(wraplength=(right-left)-100)              # The new monitor may be a different width
             except Exception:
                 pass                    # If the Windows API is unavailable we are at least fullscreen somewhere
             self.update_idletasks()
