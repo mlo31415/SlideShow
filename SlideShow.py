@@ -1212,7 +1212,8 @@ class SlideShow(tk.Tk):
                 entry.grid(row=i+1, column=2, sticky="w")
                 nameEntries.append(entry)
                 for w in (numberLabel, faceLabel, entry):
-                    ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)")
+                    ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
+                               "You do not need to fill in any rows except ones you have data for.")
 
         # Size the canvas to the table, capped to leave room for the comments box and
         # buttons below; when capped, add the scrollbar and mouse-wheel scrolling
