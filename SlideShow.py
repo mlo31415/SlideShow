@@ -24,6 +24,9 @@ The directory to be displayed and the other operating parameters are read from
     Pause Timeout         Seconds of no user input after which a paused show
                           resumes on its own  (default: 240)
     Mode                  "Dark" or "Light" color scheme  (default: Dark)
+    Show Editor           If True, the Select Photo Show menu always offers "Edit
+                          Photo Shows..."; if False it appears only when the menu is
+                          opened with Shift held down  (default: False)
     Email Timeout         Seconds of no user input after which the remembered
                           email address is forgotten  (default: 60)
     Face Detection        How sure the detector must be before it calls something a
@@ -86,11 +89,15 @@ import re
 import sys
 import json
 import time
+import queue
 import random
+import threading
 from typing import Any
 import xml.etree.ElementTree as ET
 import tkinter as tk
+from tkinter import ttk
 from tkinter import messagebox
+from tkinter import simpledialog
 from tkinter import font as tkfont
 
 from PIL import Image, ImageDraw, ImageTk
@@ -113,7 +120,7 @@ SUBDIR_FONT_SIZE=28             # Normal album-line size; on a landscape single 
 MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then wraps below it
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
-KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold"}
+KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold", "show editor"}
 
 # The color schemes for the Mode parameter (default: dark)
 THEMES={
@@ -310,6 +317,7 @@ class SlideShow(tk.Tk):
             self.emailTimeout=60.0
         self.editorEmail=""             # Remembered between saves while the user stays active
         self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
+        self.showEditor=IsTrue("Show Editor", "False")      # Otherwise Shift reveals it
 
         if len(self.rootDirectories) == 0:
             self.Fatal(f"No directory path is defined in '{settingsPath}'.\n\nThe settings file needs a 'Directories:' line followed by the path of the directory holding the photo shows.")
@@ -399,6 +407,8 @@ class SlideShow(tk.Tk):
         self.showMenuButton.config(menu=self.showMenu)
         self.showMenuButton.pack(side=tk.LEFT, padx=6)
         self.showVar=tk.StringVar(value=self.currentShowName)
+        self.editorRevealed=False       # Set while Shift is held as the menu is opened
+        self.showMenuButton.bind("<ButtonPress-1>", self.OnShowMenuPress, add="+")
         self.RebuildShowMenu()
 
         # Dragging the top bar moves the window, so it can be dropped on another monitor
@@ -575,8 +585,9 @@ class SlideShow(tk.Tk):
                 except ValueError:
                     problems.append(f"{label}='{settings[pname]}' should be a number  (ignoring it)")
 
-        if "display subdirectory" in settings and settings["display subdirectory"].casefold() not in ("true", "yes", "false", "no"):
-            problems.append(f"Display Subdirectory='{settings['display subdirectory']}' should be True or False  (ignoring it)")
+        for pname, label in (("display subdirectory", "Display Subdirectory"), ("show editor", "Show Editor")):
+            if pname in settings and settings[pname].casefold() not in ("true", "yes", "false", "no"):
+                problems.append(f"{label}='{settings[pname]}' should be True or False  (ignoring it)")
 
         if "mode" in settings and settings["mode"].casefold() not in THEMES:
             problems.append(f"Mode='{settings['mode']}' should be Dark or Light  (ignoring it)")
@@ -765,11 +776,64 @@ class SlideShow(tk.Tk):
 
     # Rebuild the Select Photo Show menu: one entry per show, the one being displayed
     # marked.  Picking one is a single click, so the menu closing is now the right thing.
+    # The editor is kept out of the way of visitors: it appears only when the menu was
+    # opened with Shift held down, or when the settings file asks for it.
     def RebuildShowMenu(self) -> None:
         self.showMenu.delete(0, tk.END)
         for show in self.shows:
             self.showMenu.add_radiobutton(label=show["name"], variable=self.showVar,
                                           value=show["name"], command=self.OnSelectShow)
+        if self.showEditor or self.editorRevealed:
+            self.showMenu.add_separator()
+            self.showMenu.add_command(label="Edit Photo Shows...", command=self.OnEditShows)
+
+    # Shift on the way into the menu reveals the editor entry
+    def OnShowMenuPress(self, event) -> None:
+        revealed=bool(event.state & 0x0001)     # Shift
+        if revealed != self.editorRevealed:
+            self.editorRevealed=revealed
+            self.RebuildShowMenu()
+
+    # Open the editor, holding the show while it is up
+    def OnEditShows(self) -> None:
+        wasPaused=self.paused
+        self.paused=True
+        self.dialogOpen=True
+        self.CancelAdvance()
+        self.UpdateButtonStates()
+
+        self.wait_window(ShowEditor(self))
+
+        self.dialogOpen=False
+        self.lastInputTime=time.time()
+        if wasPaused:
+            self.UpdateButtonStates()
+        else:
+            self.Resume()
+
+    # Take the shows as edited: save them, rebuild the menu, and put the display on a
+    # show which still exists and still has photos
+    def ApplyEditedShows(self, shows: list[dict]) -> None:
+        self.shows=shows
+        self.SaveShows()
+        if not any(show["name"] == self.currentShowName for show in self.shows):
+            self.currentShowName=self.shows[0]["name"]
+        images=self.ScanImages(self.ShowFolders(self.currentShowName))
+        if len(images) == 0:
+            name, images=self.FirstShowWithPhotos()
+            if name is None:
+                self.ShowMessage("Edit Photo Shows", "None of the photo shows has any photos in it, so the display is unchanged.", warning=True)
+                self.RebuildShowMenu()
+                return
+            self.currentShowName=name
+        self.showVar.set(self.currentShowName)
+        self.RebuildShowMenu()
+        self.images=images
+        self.history=[]
+        self.histpos=-1
+        self.NextImage()
+        self.ScheduleAdvance()
+        self.SaveState()
 
     # Append one Identify Photo save record to this session's output log -- a
     # pretty-printed JSON object followed by a blank line (concatenated JSON, loadable
@@ -1090,6 +1154,13 @@ class SlideShow(tk.Tk):
             self.emailTimeout=emailTimeout
 
         self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
+
+        val=Get("Show Editor", "False").casefold()
+        if val in ("true", "yes", "false", "no"):
+            showEditor=val in ("true", "yes")
+            if showEditor != self.showEditor:
+                self.showEditor=showEditor
+                self.RebuildShowMenu()
 
         mode=Get("Mode", "Dark").casefold()
         if mode in THEMES and THEMES[mode] is not self.theme:
@@ -1500,6 +1571,315 @@ class SlideShow(tk.Tk):
                 UpdateCancelLabel()
         commentsBox.bind("<<Modified>>", OnCommentsModified)
         UpdateCancelLabel()
+
+
+# The Edit Photo Shows dialog: the named shows on the left, and on the right the folder
+# tree with a check box on every folder.  A checked folder stands for itself and
+# everything below it, so checking a folder unchecks any of its descendants (they would
+# be redundant), and unchecking a folder inside a checked one keeps the rest of that
+# folder's contents by checking the siblings along the way down.
+class ShowEditor(tk.Toplevel):
+    PLACEHOLDER="\x01unfilled"      # Suffix of the dummy child which marks "not filled in yet"
+                                    # (not \x00: Tcl truncates strings at a NUL)
+    MISSING="\x01missing:"          # Prefix of the rows for folders which are no longer there
+
+    def __init__(self, app: "SlideShow") -> None:
+        super().__init__(app)
+        self.app=app
+        self.rootDirectory=app.rootDirectory
+        self.shows=[{"name": show["name"], "folders": list(show["folders"])} for show in app.shows]      # Working copy
+        self.selected: set[str]=set()
+        self.countGeneration=0
+        self.counts=queue.Queue()       # Photo counts from the counting threads
+        self.pollId=None
+        self.icons=self.MakeCheckboxIcons()
+
+        self.title("Edit Photo Shows")
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        tk.Label(self, text="Photo Shows", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w", padx=(12, 6), pady=(10, 4))
+        self.foldersLabel=tk.Label(self, text="Folders", font=("Segoe UI", 11, "bold"))
+        self.foldersLabel.grid(row=0, column=1, sticky="w", padx=6, pady=(10, 4))
+
+        listFrame=tk.Frame(self)
+        listFrame.grid(row=1, column=0, sticky="ns", padx=(12, 6))
+        self.showList=tk.Listbox(listFrame, font=("Segoe UI", 11), width=26, exportselection=False, activestyle="none")
+        self.showList.pack(side=tk.LEFT, fill=tk.Y, expand=True)
+        listScroll=tk.Scrollbar(listFrame, orient=tk.VERTICAL, command=self.showList.yview)
+        listScroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.showList.configure(yscrollcommand=listScroll.set)
+        self.showList.bind("<<ListboxSelect>>", self.OnPickShow)
+
+        treeFrame=tk.Frame(self)
+        treeFrame.grid(row=1, column=1, sticky="nsew", padx=6)
+        self.tree=ttk.Treeview(treeFrame, show="tree", selectmode="none")
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        treeScroll=tk.Scrollbar(treeFrame, orient=tk.VERTICAL, command=self.tree.yview)
+        treeScroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.configure(yscrollcommand=treeScroll.set)
+        self.tree.tag_configure("missing", foreground="#909090")
+        self.tree.bind("<Button-1>", self.OnTreeClick)
+        self.tree.bind("<<TreeviewOpen>>", self.OnTreeOpen)
+
+        showButtons=tk.Frame(self)
+        showButtons.grid(row=2, column=0, sticky="w", padx=(12, 6), pady=(6, 0))
+        for text, command in (("New", self.OnNew), ("Rename", self.OnRename), ("Delete", self.OnDelete)):
+            tk.Button(showButtons, text=text, font=("Segoe UI", 10), width=8, command=command).pack(side=tk.LEFT, padx=(0, 4))
+
+        self.countLabel=tk.Label(self, text="", font=("Segoe UI", 10), fg="#606060")
+        self.countLabel.grid(row=2, column=1, sticky="w", padx=6, pady=(6, 0))
+
+        dialogButtons=tk.Frame(self)
+        dialogButtons.grid(row=3, column=0, columnspan=2, pady=14)
+        tk.Button(dialogButtons, text="Save", font=("Segoe UI", 11), width=10, command=self.OnSave).pack(side=tk.LEFT, padx=8)
+        tk.Button(dialogButtons, text="Cancel", font=("Segoe UI", 11), width=10, command=self.destroy).pack(side=tk.LEFT, padx=8)
+
+        self.FillShowList(app.currentShowName)
+        self.FillTree()
+
+        # Centered on the monitor the show is on, at a size which suits a folder tree
+        self.update_idletasks()
+        left, top, right, bottom=app.CurrentMonitor()
+        width, height=min(920, right-left-80), min(640, bottom-top-80)
+        self.geometry(f"{width}x{height}+{left+(right-left-width)//2}+{top+(bottom-top-height)//2}")
+        self.transient(app)
+        self.grab_set()
+        self.PollCounts()
+
+
+    # -------------------- Folders --------------------
+    # The relative paths of the subdirectories of a relative folder ("" is the root)
+    def ChildFolders(self, folder: str) -> list[str]:
+        directory=os.path.join(self.rootDirectory, folder.replace("/", os.sep)) if len(folder) > 0 else self.rootDirectory
+        try:
+            names=sorted((n for n in os.listdir(directory) if os.path.isdir(os.path.join(directory, n))), key=str.casefold)
+        except OSError:
+            return []
+        return [f"{folder}/{name}" if len(folder) > 0 else name for name in names]
+
+    # How a folder should appear: checked when it or an ancestor is selected, partly
+    # checked when only something below it is
+    def State(self, folder: str) -> str:
+        if any(IsCoveredBy(folder, chosen) for chosen in self.selected):
+            return "checked"
+        if any(IsCoveredBy(chosen, folder) for chosen in self.selected):
+            return "partial"
+        return "unchecked"
+
+    def Toggle(self, folder: str) -> None:
+        if self.State(folder) != "checked":
+            self.selected={chosen for chosen in self.selected if not IsCoveredBy(chosen, folder)}
+            self.selected.add(folder)
+            return
+        if folder in self.selected:
+            self.selected.discard(folder)
+            return
+        # Checked because an ancestor is: drop the ancestor, but keep everything else it
+        # covered by selecting the siblings along the path down to this folder
+        ancestor=next(chosen for chosen in self.selected if IsCoveredBy(folder, chosen))
+        self.selected.discard(ancestor)
+        current=ancestor
+        for name in folder[len(ancestor):].strip("/").split("/"):
+            step=f"{current}/{name}"
+            for child in self.ChildFolders(current):
+                if child != step:
+                    self.selected.add(child)
+            current=step
+
+
+    # -------------------- The tree --------------------
+    @staticmethod
+    def MakeCheckboxIcons() -> dict[str, ImageTk.PhotoImage]:
+        icons={}
+        size, ss=14, 4
+        for name in ("unchecked", "checked", "partial"):
+            image=Image.new("RGBA", (size*ss, size*ss), (0, 0, 0, 0))
+            draw=ImageDraw.Draw(image)
+            draw.rectangle((ss, ss, (size-2)*ss, (size-2)*ss), fill="white", outline="#606060", width=ss)
+            if name == "checked":
+                draw.line([(4*ss, 7*ss), (6*ss, 9*ss), (9*ss, 4*ss)], fill="#202020", width=2*ss)
+            elif name == "partial":
+                draw.rectangle((4*ss, 4*ss, 9*ss, 9*ss), fill="#606060")
+            icons[name]=ImageTk.PhotoImage(image.resize((size, size), Image.LANCZOS))
+        return icons
+
+    def FillTree(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        for folder in self.ChildFolders(""):
+            self.InsertFolder("", folder)
+        # Selected folders which are no longer on disk, so they can be cleaned up
+        for folder in sorted(self.selected, key=str.casefold):
+            if not os.path.isdir(os.path.join(self.rootDirectory, folder.replace("/", os.sep))):
+                self.tree.insert("", tk.END, iid=self.MISSING+folder, text=f"  {folder}   (folder no longer exists)",
+                                 image=self.icons["checked"], tags=("missing",))
+        self.RefreshImages()
+        self.UpdateCount()
+
+    def InsertFolder(self, parent: str, folder: str) -> None:
+        self.tree.insert(parent, tk.END, iid=folder, text="  "+os.path.basename(folder), image=self.icons["unchecked"])
+        if len(self.ChildFolders(folder)) > 0:
+            self.tree.insert(folder, tk.END, iid=folder+self.PLACEHOLDER, text="")
+
+    # Fill in the children of every folder which has been opened but not filled in yet
+    def OnTreeOpen(self, event=None) -> None:
+        for iid in self.AllItems():
+            if iid.endswith(self.PLACEHOLDER):
+                parent=iid[:-len(self.PLACEHOLDER)]
+                if self.tree.item(parent, "open"):
+                    self.tree.delete(iid)
+                    for child in self.ChildFolders(parent):
+                        self.InsertFolder(parent, child)
+        self.RefreshImages()
+
+    def AllItems(self, parent: str="") -> list[str]:
+        items=[]
+        for iid in self.tree.get_children(parent):
+            items.append(iid)
+            items.extend(self.AllItems(iid))
+        return items
+
+    def RefreshImages(self) -> None:
+        for iid in self.AllItems():
+            if not iid.endswith(self.PLACEHOLDER) and not iid.startswith(self.MISSING):
+                self.tree.item(iid, image=self.icons[self.State(iid)])
+
+    def OnTreeClick(self, event) -> None:
+        iid=self.tree.identify_row(event.y)
+        if len(iid) == 0 or iid.endswith(self.PLACEHOLDER):
+            return
+        if "indicator" in self.tree.identify_element(event.x, event.y):
+            return                      # The expand/collapse arrow does its own job
+        if iid.startswith(self.MISSING):
+            self.selected.discard(iid[len(self.MISSING):])      # Cleaning up a folder which has gone
+            self.tree.delete(iid)
+        else:
+            self.Toggle(iid)
+            self.RefreshImages()
+        self.UpdateCount()
+
+    # Count the photos of the current selection without holding up the dialog.  The
+    # counting thread must not touch tk at all (tkinter is not thread-safe), so it drops
+    # its answer in a queue which the dialog itself picks up.
+    def UpdateCount(self) -> None:
+        self.countGeneration+=1
+        generation=self.countGeneration
+        folders=PruneFolders(self.selected)
+        if len(folders) == 0:
+            self.countLabel.config(text="No folders chosen")
+            return
+        self.countLabel.config(text=f"{len(folders)} folder{'' if len(folders) == 1 else 's'}, counting photos...")
+        paths=[os.path.join(self.rootDirectory, folder.replace("/", os.sep)) for folder in folders]
+        def Count() -> None:
+            found=len(SlideShow.ScanImages([p for p in paths if os.path.isdir(p)]))
+            self.counts.put((generation, len(folders), found))
+        threading.Thread(target=Count, daemon=True).start()
+
+    def PollCounts(self) -> None:
+        try:
+            while True:
+                generation, folders, photos=self.counts.get_nowait()
+                if generation == self.countGeneration:
+                    self.countLabel.config(text=f"{folders} folder{'' if folders == 1 else 's'}, {photos:,} photo{'' if photos == 1 else 's'}")
+        except queue.Empty:
+            pass
+        self.pollId=self.after(150, self.PollCounts)
+
+    def destroy(self) -> None:
+        if getattr(self, "pollId", None) is not None:
+            self.after_cancel(self.pollId)
+            self.pollId=None
+        super().destroy()
+
+
+    # -------------------- The list of shows --------------------
+    def FillShowList(self, select: str="") -> None:
+        self.showList.delete(0, tk.END)
+        for show in self.shows:
+            self.showList.insert(tk.END, show["name"])
+        index=next((i for i, show in enumerate(self.shows) if show["name"] == select), 0)
+        if len(self.shows) > 0:
+            self.showList.selection_clear(0, tk.END)
+            self.showList.selection_set(index)
+            self.LoadShow(index)
+
+    def CurrentIndex(self) -> int:
+        selection=self.showList.curselection()
+        return selection[0] if len(selection) > 0 else -1
+
+    def LoadShow(self, index: int) -> None:
+        self.loadedIndex=index
+        self.selected=set(PruneFolders(self.shows[index]["folders"]))
+        self.foldersLabel.config(text=f'Folders in "{self.shows[index]["name"]}"')
+        if hasattr(self, "tree"):
+            self.FillTree()
+
+    # Keep whatever has been ticked for the show being left
+    def StoreShow(self) -> None:
+        if 0 <= getattr(self, "loadedIndex", -1) < len(self.shows):
+            self.shows[self.loadedIndex]["folders"]=PruneFolders(self.selected)
+
+    def OnPickShow(self, event=None) -> None:
+        index=self.CurrentIndex()
+        if index < 0 or index == getattr(self, "loadedIndex", -1):
+            return
+        self.StoreShow()
+        self.LoadShow(index)
+
+    def AskName(self, title: str, initial: str="") -> str | None:
+        name=simpledialog.askstring(title, "Name of the photo show:", initialvalue=initial, parent=self)
+        if name is None:
+            return None
+        name=name.strip()
+        if len(name) == 0:
+            return None
+        if any(show["name"] == name for show in self.shows if show["name"] != initial):
+            messagebox.showwarning("Edit Photo Shows", f'There is already a photo show named "{name}".', parent=self)
+            return None
+        return name
+
+    def OnNew(self) -> None:
+        name=self.AskName("New Photo Show")
+        if name is None:
+            return
+        self.StoreShow()
+        self.shows.append({"name": name, "folders": []})
+        self.FillShowList(name)
+
+    def OnRename(self) -> None:
+        index=self.CurrentIndex()
+        if index < 0:
+            return
+        name=self.AskName("Rename Photo Show", self.shows[index]["name"])
+        if name is None:
+            return
+        self.StoreShow()
+        self.shows[index]["name"]=name
+        self.FillShowList(name)
+
+    def OnDelete(self) -> None:
+        index=self.CurrentIndex()
+        if index < 0:
+            return
+        if len(self.shows) == 1:
+            messagebox.showinfo("Edit Photo Shows", "There has to be at least one photo show.", parent=self)
+            return
+        if not messagebox.askyesno("Edit Photo Shows", f'Delete the photo show "{self.shows[index]["name"]}"?', parent=self):
+            return
+        del self.shows[index]
+        self.loadedIndex=-1
+        self.FillShowList()
+
+    def OnSave(self) -> None:
+        self.StoreShow()
+        empty=[show["name"] for show in self.shows if len(show["folders"]) == 0]
+        if len(empty) > 0 and not messagebox.askyesno(
+                "Edit Photo Shows",
+                "These photo shows have no folders in them and will show nothing:\n\n  "+"\n  ".join(empty)+"\n\nSave anyway?",
+                parent=self):
+            return
+        self.app.ApplyEditedShows(self.shows)
+        self.destroy()
 
 
 def main() -> None:
