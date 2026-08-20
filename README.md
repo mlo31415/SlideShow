@@ -28,7 +28,9 @@ shows as just the year.
   one half, and shows the Identify Photo panel in the other: the faces found
   in the photo listed left-to-right, each with a box to enter the person's
   name, plus boxes for other comments and corrections, the photo's date, and
-  the identifier's name or email address.  The email address is remembered between saves
+  the identifier's name or email address.  Holding the mouse down on a face
+  (or its number) rings that face in green on the photo itself, so it is clear
+  which person the row is about.  The email address is remembered between saves
   while the user stays active (see *Email Timeout*).  Prev and Next stay live
   while the panel is up: they discard anything not yet saved, move to the next
   photo, and rebuild the panel for it; Pause and Add Info are disabled.  (Face

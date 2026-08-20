@@ -60,7 +60,8 @@ half, and shows the Identify Photo panel in the other: the faces found in the
 photo listed left-to-right, each with a box to enter the person's name, plus
 a box for other comments and corrections and one for the identifier's email
 address (remembered between saves while the user stays active, then forgotten
-after Email Timeout seconds of no input).  Prev and Next stay live while the
+after Email Timeout seconds of no input).  Holding the mouse down on a face
+rings that face in green on the photo itself.  Prev and Next stay live while the
 panel is up: they discard anything unsaved, move to the next photo, and
 rebuild the panel for it; Pause and Add Info are disabled.
 Face detection uses OpenCV's YuNet model (the .onnx file alongside this
@@ -1040,6 +1041,7 @@ class SlideShow(tk.Tk):
         # The image itself, scaled to fit the space left over after the caption below it
         try:
             img=Image.open(pathname)
+            fullWidth=img.width
             width=self.centerFrame.winfo_width()-20
             height=self.centerFrame.winfo_height()-self.descLabel.winfo_reqheight()-10
             if len(credit) > 0:
@@ -1048,9 +1050,13 @@ class SlideShow(tk.Tk):
                 width=self.winfo_screenwidth()-40
                 height=self.winfo_screenheight()-300
             img.thumbnail((width, height), Image.LANCZOS)
+            # Kept so that a face can be marked on the photo while it is being identified
+            self.displayedImage=img.convert("RGB")
+            self.displayScale=img.width/fullWidth if fullWidth > 0 else 1.0
             self.photo=ImageTk.PhotoImage(img)      # Keep a reference or tk will garbage-collect it
             self.imageLabel.config(image=self.photo, text="")
         except Exception as e:
+            self.displayedImage=None
             self.imageLabel.config(image="", text=f"Could not display\n{pathname}\n{e}", fg="white", font=("Segoe UI", 14))
 
 
@@ -1345,6 +1351,26 @@ class SlideShow(tk.Tk):
         boxes.sort(key=lambda b: b[0])
         return boxes
 
+    # While the mouse is held down on a face in the Identify Photo list, ring that face
+    # in green on the photo itself, so it is clear which person the row is about
+    def HighlightFace(self, box: tuple[int, int, int, int]) -> None:
+        if getattr(self, "displayedImage", None) is None:
+            return
+        x, y, w, h=box
+        scale=self.displayScale
+        cx, cy=(x+w/2)*scale, (y+h/2)*scale
+        r=0.65*((w*scale)**2+(h*scale)**2)**0.5     # The circle the row's thumbnail was cut from
+        marked=self.displayedImage.copy()
+        ImageDraw.Draw(marked).ellipse((cx-r, cy-r, cx+r, cy+r), outline="#00FF40", width=max(2, int(r/12)))
+        self.photo=ImageTk.PhotoImage(marked)
+        self.imageLabel.config(image=self.photo)
+
+    def ClearHighlight(self) -> None:
+        if getattr(self, "displayedImage", None) is None:
+            return
+        self.photo=ImageTk.PhotoImage(self.displayedImage)
+        self.imageLabel.config(image=self.photo)
+
     # A round thumbnail of the face at box, for the Identify Photo table
     @staticmethod
     def MakeFaceThumbnail(img: Image.Image, box: tuple[int, int, int, int], bg: str, size: int=72) -> ImageTk.PhotoImage:
@@ -1453,7 +1479,12 @@ class SlideShow(tk.Tk):
                 nameEntries.append(entry)
                 for w in (numberLabel, faceLabel, entry):
                     ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
-                               "You do not need to fill in any rows except ones you have data for.")
+                               "You do not need to fill in any rows except ones you have data for.  "
+                               "Hold the mouse down on the face to see who it is in the photo.")
+                # Holding the mouse down on the number or the face marks that face on the photo
+                for w in (numberLabel, faceLabel):
+                    w.bind("<ButtonPress-1>", lambda e, box=box: self.HighlightFace(box))
+                    w.bind("<ButtonRelease-1>", lambda e: self.ClearHighlight())
 
         # Size the canvas to the table, capped to leave room for the comments box and
         # buttons below; when capped, add the scrollbar and mouse-wheel scrolling
@@ -1501,6 +1532,7 @@ class SlideShow(tk.Tk):
 
         def Close(restore: bool=True) -> None:
             self.unbind_all("<MouseWheel>")
+            self.ClearHighlight()       # In case the panel is closed with a face still marked
             panel.destroy()
             separator.destroy()
             self.identifyPanel=None
