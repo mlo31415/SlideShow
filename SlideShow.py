@@ -6,13 +6,14 @@ Displays a full-screen slideshow of the images found in a directory tree.
 The directory to be displayed and the other operating parameters are read from
 "SlideShow settings.txt" (name=value lines) in the program's directory:
 
-    Directories:          The next line is the path of the directory holding the photo
-                          shows: each of its immediate subdirectories (the TLDs) is an
-                          available show, listed with a check box in the Select Photo
-                          Show menu.  Every checked show's whole tree is in the
-                          slideshow.  The checked set is remembered between runs (in
-                          "SlideShow state.json"); TLDs that have vanished are dropped,
-                          and if none survive, all are checked.
+    Directories:          The next line is the path of the root directory holding the
+                          photos.  What is displayed is a "photo show": a named group
+                          of folders anywhere in that tree, each folder standing for
+                          itself and everything below it.  The shows live in
+                          "SlideShow shows.json" and are picked from the Select Photo
+                          Show menu; the one last displayed is remembered in
+                          "SlideShow state.json".  Without a shows file, one show per
+                          top-level directory is made up, plus "All Photos".
     Order                 "Sequential" or "Random"  (default: Sequential)
     Display Time          Seconds each image is displayed  (default: 10)
     Title                 Title shown at the top  (default: "photos.fanac.org")
@@ -96,6 +97,7 @@ from PIL import Image, ImageDraw, ImageTk
 
 SETTINGS_FILE="SlideShow settings.txt"
 STATE_FILE="SlideShow state.json"
+SHOWS_FILE="SlideShow shows.json"
 FACE_MODEL="face_detection_yunet_2023mar.onnx"
 IMAGE_EXTENSIONS={".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 DEFAULT_TITLE_FONT="Segoe UI"
@@ -155,6 +157,31 @@ def ReadSettings(pathname: str) -> dict[str, Any] | None:
                 continue        # A commented-out value means "use the default"
             settings[name.strip().casefold()]=val
     return settings
+
+
+# -------------------- Photo shows --------------------
+# A "photo show" is a name and a list of folders, each folder standing for itself and
+# everything below it.  Folders are stored relative to the root directory, with "/"
+# separators, so a shows file remains readable and portable.
+
+# One folder path in the stored form
+def NormalizeFolder(folder: str) -> str:
+    return folder.replace("\\", "/").strip("/")
+
+# True if folder is ancestor, or lies somewhere below it
+def IsCoveredBy(folder: str, ancestor: str) -> bool:
+    folder, ancestor=folder.casefold(), ancestor.casefold()
+    return folder == ancestor or folder.startswith(ancestor+"/")
+
+# Drop every folder which another folder in the list already covers, so that no photo
+# is scanned (and shown) twice
+def PruneFolders(folders) -> list[str]:
+    kept=[]
+    for folder in sorted({NormalizeFolder(f) for f in folders if len(NormalizeFolder(f)) > 0},
+                         key=lambda f: (f.count("/"), f.casefold())):
+        if not any(IsCoveredBy(folder, k) for k in kept):
+            kept.append(folder)
+    return sorted(kept, key=str.casefold)
 
 
 # The screen rectangle (left, top, right, bottom) of the monitor containing a point.
@@ -295,29 +322,37 @@ class SlideShow(tk.Tk):
         self.pendingSettings=None       # Newly-read settings awaiting a second identical read (debounce)
 
         # -------------------- Find the images --------------------
-        # The immediate subdirectories of the root directory (the TLDs) are the available
-        # photo shows, each toggled by a check box in the Select Photo Show menu; every
-        # checked show's whole tree is in the slideshow.  The set checked last time is
-        # restored at startup (dropping TLDs that no longer exist); when none survive,
-        # all are checked.
+        # The photo shows -- named groups of folders -- are kept in the shows file; the
+        # Select Photo Show menu picks one of them.  The show chosen last time is
+        # reopened if it is still there and still has photos.
         self.tlds=self.FindTLDs(self.rootDirectory)
         if len(self.tlds) == 0:
             self.Fatal(f"No directories found inside '{self.rootDirectory}' -- there are no photo shows to display.")
-        self.statePath=os.path.join(os.path.dirname(os.path.abspath(__file__)), STATE_FILE)
-        self.checkedTlds={os.path.normcase(d) for d in self.tlds}
+        programDirectory=os.path.dirname(os.path.abspath(__file__))
+        self.statePath=os.path.join(programDirectory, STATE_FILE)
+        self.showsPath=os.path.join(programDirectory, SHOWS_FILE)
+        self.shows=self.LoadShows()
+        self.currentShowName=self.shows[0]["name"]
         self.savedMonitor=None          # The monitor the show was on last time, if it was recorded
         try:
             with open(self.statePath, "r", encoding="utf-8") as file:
                 state=json.load(file)
-            saved={os.path.normcase(d) for d in state.get("checked directories", [])}
-            if len(saved & self.checkedTlds) > 0:
-                self.checkedTlds&=saved
+            saved=state.get("current show", "")
+            if any(show["name"] == saved for show in self.shows):
+                self.currentShowName=saved
             monitor=state.get("monitor")
             if isinstance(monitor, list) and len(monitor) == 4:
                 self.savedMonitor=tuple(monitor)
         except (OSError, json.JSONDecodeError):
             pass
-        self.images=self.ScanImages(self.CheckedTldList())
+        self.images=self.ScanImages(self.ShowFolders(self.currentShowName))
+        if len(self.images) == 0:       # That show has lost its photos -- use one which has some
+            for show in self.shows:
+                images=self.ScanImages(self.ShowFolders(show["name"]))
+                if len(images) > 0:
+                    self.currentShowName=show["name"]
+                    self.images=images
+                    break
         if len(self.images) == 0:
             self.Fatal(f"No image files found in the photo shows under '{self.rootDirectory}'.")
 
@@ -363,6 +398,7 @@ class SlideShow(tk.Tk):
         self.showMenu=tk.Menu(self.showMenuButton, tearoff=False)
         self.showMenuButton.config(menu=self.showMenu)
         self.showMenuButton.pack(side=tk.LEFT, padx=6)
+        self.showVar=tk.StringVar(value=self.currentShowName)
         self.RebuildShowMenu()
 
         # Dragging the top bar moves the window, so it can be dropped on another monitor
@@ -684,20 +720,56 @@ class SlideShow(tk.Tk):
         except OSError:
             return []
 
-    # The checked TLDs, in TLD (sorted) order
-    def CheckedTldList(self) -> list[str]:
-        return [d for d in self.tlds if os.path.normcase(d) in self.checkedTlds]
+    # The photo shows, from the shows file.  When there is no usable file, one is made
+    # up: a show holding everything, and one for each top-level directory.
+    def LoadShows(self) -> list[dict]:
+        try:
+            with open(self.showsPath, "r", encoding="utf-8") as file:
+                shows=json.load(file).get("shows", [])
+            shows=[{"name": str(s["name"]), "folders": [NormalizeFolder(f) for f in s["folders"]]}
+                   for s in shows if isinstance(s, dict) and "name" in s and "folders" in s]
+            if len(shows) > 0:
+                return shows
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return self.DefaultShows()
 
-    # Rebuild the Select Photo Show menu: one check box per TLD, showing just the
-    # directory names, with the checked ones making up the slideshow
+    # The shows to start from when there is no shows file: everything, then one per
+    # top-level directory
+    def DefaultShows(self) -> list[dict]:
+        names=[os.path.basename(d) for d in self.tlds]
+        return [{"name": "All Photos", "folders": names}]+[{"name": n, "folders": [n]} for n in names]
+
+    def SaveShows(self) -> None:
+        try:
+            with open(self.showsPath, "w", encoding="utf-8") as file:
+                json.dump({"shows": self.shows}, file, indent=2, ensure_ascii=False)
+        except OSError as e:
+            self.ShowMessage("SlideShow", f"Could not save the photo shows:\n{e}", warning=True)
+
+    # The folders of a named show as absolute paths: folders which have gone missing are
+    # skipped, and a folder already covered by another is dropped so that no photo is
+    # scanned -- and shown -- twice
+    def ShowFolders(self, name: str) -> list[str]:
+        folders=next((show["folders"] for show in self.shows if show["name"] == name), [])
+        paths=[os.path.join(self.rootDirectory, folder.replace("/", os.sep)) for folder in PruneFolders(folders)]
+        return [path for path in paths if os.path.isdir(path)]
+
+    # The first show which actually has photos, and its images: (None, []) if none has
+    def FirstShowWithPhotos(self) -> tuple[str | None, list[str]]:
+        for show in self.shows:
+            images=self.ScanImages(self.ShowFolders(show["name"]))
+            if len(images) > 0:
+                return show["name"], images
+        return None, []
+
+    # Rebuild the Select Photo Show menu: one entry per show, the one being displayed
+    # marked.  Picking one is a single click, so the menu closing is now the right thing.
     def RebuildShowMenu(self) -> None:
         self.showMenu.delete(0, tk.END)
-        self.showVars=[]
-        for i, d in enumerate(self.tlds):
-            var=tk.BooleanVar(value=os.path.normcase(d) in self.checkedTlds)
-            self.showVars.append(var)
-            self.showMenu.add_checkbutton(label=os.path.basename(d), variable=var,
-                                          command=lambda i=i: self.OnToggleShow(i))
+        for show in self.shows:
+            self.showMenu.add_radiobutton(label=show["name"], variable=self.showVar,
+                                          value=show["name"], command=self.OnSelectShow)
 
     # Append one Identify Photo save record to this session's output log -- a
     # pretty-printed JSON object followed by a blank line (concatenated JSON, loadable
@@ -721,11 +793,11 @@ class SlideShow(tk.Tk):
         except OSError as e:
             messagebox.showwarning("SlideShow", f"Could not write the output log:\n{e}", parent=self)
 
-    # Remember the checked shows and the monitor in use between invocations
+    # Remember the show being displayed and the monitor in use between invocations
     def SaveState(self) -> None:
         try:
             with open(self.statePath, "w", encoding="utf-8") as file:
-                json.dump({"checked directories": self.CheckedTldList(),
+                json.dump({"current show": self.currentShowName,
                            "monitor": list(self.CurrentMonitor())}, file)
         except (OSError, tk.TclError, AttributeError):
             pass
@@ -736,23 +808,17 @@ class SlideShow(tk.Tk):
         self.SaveState()
         super().destroy()
 
-    # A show was checked or unchecked in the menu: recompute the slideshow from the
-    # union of the checked shows' trees
-    def OnToggleShow(self, index: int) -> None:
-        newChecked=[d for i, d in enumerate(self.tlds) if self.showVars[i].get()]
-        if len(newChecked) == 0:
-            self.showVars[index].set(True)      # Undo the toggle
-            self.ShowMessage("Select Photo Show",
-                             f'The slideshow needs at least one photo show, so "{os.path.basename(self.tlds[index])}" stays checked.\n\n'
-                             "To switch to a different show, check it first and then uncheck the others.")
+    # A show was picked from the menu: display it
+    def OnSelectShow(self) -> None:
+        name=self.showVar.get()
+        if name == self.currentShowName:
             return
-        images=self.ScanImages(newChecked)
+        images=self.ScanImages(self.ShowFolders(name))
         if len(images) == 0:
-            self.showVars[index].set(not self.showVars[index].get())
-            self.ShowMessage("Select Photo Show",
-                             "That change would have left no photos to display, so it has been undone.", warning=True)
+            self.showVar.set(self.currentShowName)      # Undo the pick
+            self.ShowMessage("Select Photo Show", f'"{name}" has no photos in it, so the show has not been changed.')
             return
-        self.checkedTlds={os.path.normcase(d) for d in newChecked}
+        self.currentShowName=name
         self.images=images
         self.history=[]
         self.histpos=-1
@@ -1037,8 +1103,10 @@ class SlideShow(tk.Tk):
             self.randomOrder=False
         # else: unrecognized value -- keep the current setting
 
-        # A new root directory: rediscover its TLDs and restart with all of them
-        # checked.  (The path is a valid directory by construction of the parse.)
+        # A new root directory: rediscover its top-level directories.  The existing shows
+        # are kept if any of them still finds photos there; if none does, they described
+        # some other collection, so shows for the new root are made up instead.
+        # (The path is a valid directory by construction of the parse.)
         newDirectories=settings.get("directories", [])
         if len(newDirectories) == 0:
             problems.append("No directory path is defined  (keeping the current one)")
@@ -1047,13 +1115,18 @@ class SlideShow(tk.Tk):
             if len(tlds) == 0:
                 problems.append(f"No directories found inside '{newDirectories[0]}'  (keeping the current one)")
                 return problems
-            images=self.ScanImages(tlds)
-            if len(images) == 0:
+            oldRoot, oldTlds=self.rootDirectory, self.tlds
+            self.rootDirectory, self.tlds=newDirectories[0], tlds
+            name, images=self.FirstShowWithPhotos()
+            if name is None:
+                self.shows=self.DefaultShows()
+                name, images=self.FirstShowWithPhotos()
+            if name is None:
+                self.rootDirectory, self.tlds=oldRoot, oldTlds     # Nothing to show there
                 problems.append(f"No image files found in the photo shows under '{newDirectories[0]}'  (keeping the current one)")
                 return problems
-            self.rootDirectory=newDirectories[0]
-            self.tlds=tlds
-            self.checkedTlds={os.path.normcase(d) for d in tlds}
+            self.currentShowName=name
+            self.showVar.set(name)
             self.images=images
             self.history=[]
             self.histpos=-1

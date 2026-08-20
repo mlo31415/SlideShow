@@ -49,9 +49,26 @@ state.json`); if that monitor is gone, it opens on the main one instead.
 Dragging the top bar moves the window to another monitor.
 
 A top bar across the top of the screen holds the **Select Photo Show** menu at
-the left — one check box per photo show (directory names only); the slideshow
-is the union of the checked shows' trees — and a **✕** close box in the
-upper-right corner.
+the left and a **✕** close box in the upper-right corner.
+
+## Photo shows
+
+What the slideshow displays is a *photo show*: a named group of folders taken
+from anywhere in the root directory's tree, each folder standing for itself and
+everything below it.  Picking one from the **Select Photo Show** menu switches
+to it.  Shows are kept in `SlideShow shows.json` beside the settings file:
+
+```json
+{"shows": [
+   {"name": "Worldcons", "folders": ["Worldcons", "Fan Photos/LASFS"]},
+   {"name": "Fan Photos", "folders": ["Fan Photos"]}]}
+```
+
+Folder paths are relative to the root directory and use `/` separators.  A
+folder that no longer exists is skipped, and a folder already covered by
+another in the same show is ignored, so no photo is ever shown twice.  When
+there is no shows file, one show per top-level directory is made up, plus an
+"All Photos" show holding them all.
 
 Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = exit.
 
@@ -62,7 +79,7 @@ in the program's directory:
 
 | Name | Meaning | Default |
 |------|---------|---------|
-| Directories: | The next line is the path of the directory holding the photo shows: each of its immediate subdirectories (the TLDs) is an available show, listed with a check box in the Select Photo Show menu.  Every checked show's whole tree is in the slideshow.  The checked set is remembered between runs (in `SlideShow state.json`) | *(required)* |
+| Directories: | The next line is the path of the root directory holding the photos.  See **Photo shows** below | *(required)* |
 | Order | `Sequential` or `Random` | Sequential |
 | Display Time | Seconds each image is shown | 10 |
 | Title | Title shown at the top | photos.fanac.org |
