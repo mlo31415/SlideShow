@@ -1721,12 +1721,21 @@ class ShowEditor(tk.Toplevel):
         if len(self.ChildFolders(folder)) > 0:
             self.tree.insert(folder, tk.END, iid=folder+self.PLACEHOLDER, text="")
 
-    # Fill in the children of every folder which has been opened but not filled in yet
+    # Fill in the children of a folder which has just been opened.  The item's "open"
+    # flag is not set until after <<TreeviewOpen>> has been dealt with, so the folder
+    # in hand is filled in now and the rest are swept up once the event is over.
     def OnTreeOpen(self, event=None) -> None:
+        self.FillOpenedFolders()
+        self.after(0, self.FillOpenedFolders)
+
+    def FillOpenedFolders(self) -> None:
+        if not self.tree.winfo_exists():
+            return                      # The dialog has been closed
+        justOpened=self.tree.focus()
         for iid in self.AllItems():
             if iid.endswith(self.PLACEHOLDER):
                 parent=iid[:-len(self.PLACEHOLDER)]
-                if self.tree.item(parent, "open"):
+                if self.tree.item(parent, "open") or parent == justOpened:
                     self.tree.delete(iid)
                     for child in self.ChildFolders(parent):
                         self.InsertFolder(parent, child)
