@@ -1588,6 +1588,7 @@ class ShowEditor(tk.Toplevel):
         self.app=app
         self.rootDirectory=app.rootDirectory
         self.shows=[{"name": show["name"], "folders": list(show["folders"])} for show in app.shows]      # Working copy
+        self.originalDigest=self.Digest(self.shows)     # To tell later whether anything was changed
         self.selected: set[str]=set()
         self.countGeneration=0
         self.counts=queue.Queue()       # Photo counts from the counting threads
@@ -1633,7 +1634,8 @@ class ShowEditor(tk.Toplevel):
         dialogButtons=tk.Frame(self)
         dialogButtons.grid(row=3, column=0, columnspan=2, pady=14)
         tk.Button(dialogButtons, text="Save", font=("Segoe UI", 11), width=10, command=self.OnSave).pack(side=tk.LEFT, padx=8)
-        tk.Button(dialogButtons, text="Cancel", font=("Segoe UI", 11), width=10, command=self.destroy).pack(side=tk.LEFT, padx=8)
+        tk.Button(dialogButtons, text="Cancel", font=("Segoe UI", 11), width=10, command=self.OnCancel).pack(side=tk.LEFT, padx=8)
+        self.protocol("WM_DELETE_WINDOW", self.OnCancel)
 
         self.FillShowList(app.currentShowName)
         self.FillTree()
@@ -1878,6 +1880,22 @@ class ShowEditor(tk.Toplevel):
         del self.shows[index]
         self.loadedIndex=-1
         self.FillShowList()
+
+    # What the shows amount to, for telling whether anything has actually been changed
+    # (the same folders in a different order, or a redundant one, is no change)
+    @staticmethod
+    def Digest(shows: list[dict]) -> list:
+        return [(show["name"], tuple(PruneFolders(show["folders"]))) for show in shows]
+
+    # Cancel throws away everything done since the dialog was opened, so ask first
+    def OnCancel(self) -> None:
+        self.StoreShow()
+        if self.Digest(self.shows) != self.originalDigest and not messagebox.askyesno(
+                "Edit Photo Shows",
+                "The photo shows have been changed.\n\nClose the editor and throw those changes away?",
+                icon="warning", parent=self):
+            return
+        self.destroy()
 
     def OnSave(self) -> None:
         self.StoreShow()

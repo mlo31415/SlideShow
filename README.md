@@ -79,7 +79,8 @@ Checking a folder takes it and everything below it, so checking a folder
 absorbs any of its descendants; unchecking one folder inside a checked one
 keeps the rest by checking the folders alongside it.  A running total of the
 folders and photos chosen is shown as you go, and folders which have since
-been deleted appear in gray so they can be cleared out.
+been deleted appear in gray so they can be cleared out.  **Save** keeps the
+changes; **Cancel** throws them away, asking first if anything was changed.
 
 Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = exit.
 
