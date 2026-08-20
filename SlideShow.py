@@ -9,11 +9,11 @@ The directory to be displayed and the other operating parameters are read from
     Directories:          The next line is the path of the root directory holding the
                           photos.  What is displayed is a "photo show": a named group
                           of folders anywhere in that tree, each folder standing for
-                          itself and everything below it.  The shows live in
-                          "SlideShow shows.json" and are picked from the Select Photo
-                          Show menu; the one last displayed is remembered in
-                          "SlideShow state.json".  Without a shows file, one show per
-                          top-level directory is made up, plus "All Photos".
+                          itself and everything below it.  The menu offers the
+                          built-in "All Photos" and whatever shows have been built
+                          with "Edit Photo Shows..."; those are kept in
+                          "SlideShow shows.json" and the one last displayed is
+                          remembered in "SlideShow state.json".
     Order                 "Sequential" or "Random"  (default: Sequential)
     Display Time          Seconds each image is displayed  (default: 10)
     Title                 Title shown at the top  (default: "photos.fanac.org")
@@ -24,9 +24,6 @@ The directory to be displayed and the other operating parameters are read from
     Pause Timeout         Seconds of no user input after which a paused show
                           resumes on its own  (default: 240)
     Mode                  "Dark" or "Light" color scheme  (default: Dark)
-    Show Editor           If True, the Select Photo Show menu always offers "Edit
-                          Photo Shows..."; if False it appears only when the menu is
-                          opened with Shift held down  (default: False)
     Email Timeout         Seconds of no user input after which the remembered
                           email address is forgotten  (default: 60)
     Face Detection        How sure the detector must be before it calls something a
@@ -106,6 +103,8 @@ from PIL import Image, ImageDraw, ImageTk
 SETTINGS_FILE="SlideShow settings.txt"
 STATE_FILE="SlideShow state.json"
 SHOWS_FILE="SlideShow shows.json"
+SHOWS_VERSION=2                 # 2: the shows file holds only the shows built in the editor
+ALL_PHOTOS="All Photos"         # The built-in show: everything under the root directory
 FACE_MODEL="face_detection_yunet_2023mar.onnx"
 IMAGE_EXTENSIONS={".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 DEFAULT_TITLE_FONT="Segoe UI"
@@ -121,7 +120,7 @@ SUBDIR_FONT_SIZE=28             # Normal album-line size; on a landscape single 
 MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then wraps below it
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
-KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold", "show editor"}
+KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold"}
 
 # The color schemes for the Mode parameter (default: dark)
 THEMES={
@@ -318,7 +317,6 @@ class SlideShow(tk.Tk):
             self.emailTimeout=60.0
         self.editorEmail=""             # Remembered between saves while the user stays active
         self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
-        self.showEditor=IsTrue("Show Editor", "False")      # Otherwise Shift reveals it
 
         if len(self.rootDirectories) == 0:
             self.Fatal(f"No directory path is defined in '{settingsPath}'.\n\nThe settings file needs a 'Directories:' line followed by the path of the directory holding the photo shows.")
@@ -341,13 +339,15 @@ class SlideShow(tk.Tk):
         self.statePath=os.path.join(programDirectory, STATE_FILE)
         self.showsPath=os.path.join(programDirectory, SHOWS_FILE)
         self.shows=self.LoadShows()
-        self.currentShowName=self.shows[0]["name"]
+        if self.showsMigrated:
+            self.SaveShows()            # Write the tidied-up file back at once
+        self.currentShowName=ALL_PHOTOS
         self.savedMonitor=None          # The monitor the show was on last time, if it was recorded
         try:
             with open(self.statePath, "r", encoding="utf-8") as file:
                 state=json.load(file)
             saved=state.get("current show", "")
-            if any(show["name"] == saved for show in self.shows):
+            if any(show["name"] == saved for show in self.AllShows()):
                 self.currentShowName=saved
             monitor=state.get("monitor")
             if isinstance(monitor, list) and len(monitor) == 4:
@@ -356,12 +356,9 @@ class SlideShow(tk.Tk):
             pass
         self.images=self.ScanImages(self.ShowFolders(self.currentShowName))
         if len(self.images) == 0:       # That show has lost its photos -- use one which has some
-            for show in self.shows:
-                images=self.ScanImages(self.ShowFolders(show["name"]))
-                if len(images) > 0:
-                    self.currentShowName=show["name"]
-                    self.images=images
-                    break
+            name, images=self.FirstShowWithPhotos()
+            if name is not None:
+                self.currentShowName, self.images=name, images
         if len(self.images) == 0:
             self.Fatal(f"No image files found in the photo shows under '{self.rootDirectory}'.")
 
@@ -408,8 +405,6 @@ class SlideShow(tk.Tk):
         self.showMenuButton.config(menu=self.showMenu)
         self.showMenuButton.pack(side=tk.LEFT, padx=6)
         self.showVar=tk.StringVar(value=self.currentShowName)
-        self.editorRevealed=False       # Set while Shift is held as the menu is opened
-        self.showMenuButton.bind("<ButtonPress-1>", self.OnShowMenuPress, add="+")
         self.RebuildShowMenu()
 
         # Dragging the top bar moves the window, so it can be dropped on another monitor
@@ -586,9 +581,8 @@ class SlideShow(tk.Tk):
                 except ValueError:
                     problems.append(f"{label}='{settings[pname]}' should be a number  (ignoring it)")
 
-        for pname, label in (("display subdirectory", "Display Subdirectory"), ("show editor", "Show Editor")):
-            if pname in settings and settings[pname].casefold() not in ("true", "yes", "false", "no"):
-                problems.append(f"{label}='{settings[pname]}' should be True or False  (ignoring it)")
+        if "display subdirectory" in settings and settings["display subdirectory"].casefold() not in ("true", "yes", "false", "no"):
+            problems.append(f"Display Subdirectory='{settings['display subdirectory']}' should be True or False  (ignoring it)")
 
         if "mode" in settings and settings["mode"].casefold() not in THEMES:
             problems.append(f"Mode='{settings['mode']}' should be Dark or Light  (ignoring it)")
@@ -732,68 +726,65 @@ class SlideShow(tk.Tk):
         except OSError:
             return []
 
-    # The photo shows, from the shows file.  When there is no usable file, one is made
-    # up: a show holding everything, and one for each top-level directory.
+    # The shows built in the editor, from the shows file.  "All Photos" is built in
+    # rather than stored, so it is dropped if an older file still holds it -- as are the
+    # shows which older versions made up from the top-level folders.
     def LoadShows(self) -> list[dict]:
+        self.showsMigrated=False
         try:
             with open(self.showsPath, "r", encoding="utf-8") as file:
-                shows=json.load(file).get("shows", [])
+                data=json.load(file)
             shows=[{"name": str(s["name"]), "folders": [NormalizeFolder(f) for f in s["folders"]]}
-                   for s in shows if isinstance(s, dict) and "name" in s and "folders" in s]
-            if len(shows) > 0:
-                return shows
+                   for s in data.get("shows", []) if isinstance(s, dict) and "name" in s and "folders" in s]
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            pass
-        return self.DefaultShows()
-
-    # The shows to start from when there is no shows file: everything, then one per
-    # top-level directory
-    def DefaultShows(self) -> list[dict]:
-        names=[os.path.basename(d) for d in self.tlds]
-        return [{"name": "All Photos", "folders": names}]+[{"name": n, "folders": [n]} for n in names]
+            return []
+        before=len(shows)
+        shows=[show for show in shows if show["name"] != ALL_PHOTOS]
+        if data.get("version", 1) < SHOWS_VERSION:
+            tldNames={os.path.basename(d).casefold() for d in self.tlds}
+            shows=[show for show in shows
+                   if not (len(show["folders"]) == 1 and show["folders"][0].casefold() == show["name"].casefold()
+                           and show["name"].casefold() in tldNames)]
+        self.showsMigrated=len(shows) != before or data.get("version", 1) < SHOWS_VERSION
+        return shows
 
     def SaveShows(self) -> None:
         try:
             with open(self.showsPath, "w", encoding="utf-8") as file:
-                json.dump({"shows": self.shows}, file, indent=2, ensure_ascii=False)
+                json.dump({"version": SHOWS_VERSION, "shows": self.shows}, file, indent=2, ensure_ascii=False)
         except OSError as e:
             self.ShowMessage("SlideShow", f"Could not save the photo shows:\n{e}", warning=True)
+
+    # The shows on offer: the built-in "everything" show, then those built in the editor
+    def AllShows(self) -> list[dict]:
+        return [{"name": ALL_PHOTOS, "folders": [os.path.basename(d) for d in self.tlds]}]+self.shows
 
     # The folders of a named show as absolute paths: folders which have gone missing are
     # skipped, and a folder already covered by another is dropped so that no photo is
     # scanned -- and shown -- twice
     def ShowFolders(self, name: str) -> list[str]:
-        folders=next((show["folders"] for show in self.shows if show["name"] == name), [])
+        folders=next((show["folders"] for show in self.AllShows() if show["name"] == name), [])
         paths=[os.path.join(self.rootDirectory, folder.replace("/", os.sep)) for folder in PruneFolders(folders)]
         return [path for path in paths if os.path.isdir(path)]
 
     # The first show which actually has photos, and its images: (None, []) if none has
     def FirstShowWithPhotos(self) -> tuple[str | None, list[str]]:
-        for show in self.shows:
+        for show in self.AllShows():
             images=self.ScanImages(self.ShowFolders(show["name"]))
             if len(images) > 0:
                 return show["name"], images
         return None, []
 
-    # Rebuild the Select Photo Show menu: one entry per show, the one being displayed
-    # marked.  Picking one is a single click, so the menu closing is now the right thing.
-    # The editor is kept out of the way of visitors: it appears only when the menu was
-    # opened with Shift held down, or when the settings file asks for it.
+    # Rebuild the Select Photo Show menu: the built-in All Photos, then the shows built
+    # in the editor, with the one being displayed marked, and the editor at the bottom.
+    # Picking a show is a single click, so the menu closing is the right thing.
     def RebuildShowMenu(self) -> None:
         self.showMenu.delete(0, tk.END)
-        for show in self.shows:
+        for show in self.AllShows():
             self.showMenu.add_radiobutton(label=show["name"], variable=self.showVar,
                                           value=show["name"], command=self.OnSelectShow)
-        if self.showEditor or self.editorRevealed:
-            self.showMenu.add_separator()
-            self.showMenu.add_command(label="Edit Photo Shows...", command=self.OnEditShows)
-
-    # Shift on the way into the menu reveals the editor entry
-    def OnShowMenuPress(self, event) -> None:
-        revealed=bool(event.state & 0x0001)     # Shift
-        if revealed != self.editorRevealed:
-            self.editorRevealed=revealed
-            self.RebuildShowMenu()
+        self.showMenu.add_separator()
+        self.showMenu.add_command(label="Edit Photo Shows...", command=self.OnEditShows)
 
     # Open the editor, holding the show while it is up
     def OnEditShows(self) -> None:
@@ -817,8 +808,8 @@ class SlideShow(tk.Tk):
     def ApplyEditedShows(self, shows: list[dict]) -> None:
         self.shows=shows
         self.SaveShows()
-        if not any(show["name"] == self.currentShowName for show in self.shows):
-            self.currentShowName=self.shows[0]["name"]
+        if not any(show["name"] == self.currentShowName for show in self.AllShows()):
+            self.currentShowName=ALL_PHOTOS
         images=self.ScanImages(self.ShowFolders(self.currentShowName))
         if len(images) == 0:
             name, images=self.FirstShowWithPhotos()
@@ -1161,13 +1152,6 @@ class SlideShow(tk.Tk):
 
         self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
 
-        val=Get("Show Editor", "False").casefold()
-        if val in ("true", "yes", "false", "no"):
-            showEditor=val in ("true", "yes")
-            if showEditor != self.showEditor:
-                self.showEditor=showEditor
-                self.RebuildShowMenu()
-
         mode=Get("Mode", "Dark").casefold()
         if mode in THEMES and THEMES[mode] is not self.theme:
             self.theme=THEMES[mode]
@@ -1195,9 +1179,6 @@ class SlideShow(tk.Tk):
             oldRoot, oldTlds=self.rootDirectory, self.tlds
             self.rootDirectory, self.tlds=newDirectories[0], tlds
             name, images=self.FirstShowWithPhotos()
-            if name is None:
-                self.shows=self.DefaultShows()
-                name, images=self.FirstShowWithPhotos()
             if name is None:
                 self.rootDirectory, self.tlds=oldRoot, oldTlds     # Nothing to show there
                 problems.append(f"No image files found in the photo shows under '{newDirectories[0]}'  (keeping the current one)")
@@ -1840,11 +1821,17 @@ class ShowEditor(tk.Toplevel):
         self.showList.delete(0, tk.END)
         for show in self.shows:
             self.showList.insert(tk.END, show["name"])
+        if len(self.shows) == 0:        # Nothing built yet: All Photos is built in and not listed here
+            self.loadedIndex=-1
+            self.selected=set()
+            self.foldersLabel.config(text='Press "New" to make a photo show')
+            if hasattr(self, "tree"):
+                self.FillTree()
+            return
         index=next((i for i, show in enumerate(self.shows) if show["name"] == select), 0)
-        if len(self.shows) > 0:
-            self.showList.selection_clear(0, tk.END)
-            self.showList.selection_set(index)
-            self.LoadShow(index)
+        self.showList.selection_clear(0, tk.END)
+        self.showList.selection_set(index)
+        self.LoadShow(index)
 
     def CurrentIndex(self) -> int:
         selection=self.showList.curselection()
@@ -1903,9 +1890,6 @@ class ShowEditor(tk.Toplevel):
     def OnDelete(self) -> None:
         index=self.CurrentIndex()
         if index < 0:
-            return
-        if len(self.shows) == 1:
-            messagebox.showinfo("Edit Photo Shows", "There has to be at least one photo show.", parent=self)
             return
         if not messagebox.askyesno("Edit Photo Shows", f'Delete the photo show "{self.shows[index]["name"]}"?', parent=self):
             return

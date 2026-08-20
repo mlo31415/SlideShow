@@ -57,25 +57,23 @@ the left and a **✕** close box in the upper-right corner.
 
 What the slideshow displays is a *photo show*: a named group of folders taken
 from anywhere in the root directory's tree, each folder standing for itself and
-everything below it.  Picking one from the **Select Photo Show** menu switches
-to it.  Shows are kept in `SlideShow shows.json` beside the settings file:
+everything below it.  The **Select Photo Show** menu offers the built-in **All
+Photos** — everything under the root — followed by whatever shows have been
+built with **Edit Photo Shows…** at the bottom of the same menu.
+
+The shows you build are kept in `SlideShow shows.json` beside the settings
+file, and last from one run to the next:
 
 ```json
-{"shows": [
-   {"name": "Worldcons", "folders": ["Worldcons", "Fan Photos/LASFS"]},
-   {"name": "Fan Photos", "folders": ["Fan Photos"]}]}
+{"version": 2, "shows": [
+   {"name": "Worldcons", "folders": ["Worldcons", "Fan Photos/LASFS"]}]}
 ```
 
 Folder paths are relative to the root directory and use `/` separators.  A
 folder that no longer exists is skipped, and a folder already covered by
-another in the same show is ignored, so no photo is ever shown twice.  When
-there is no shows file, one show per top-level directory is made up, plus an
-"All Photos" show holding them all.
+another in the same show is ignored, so no photo is ever shown twice.
 
-Shows are built in the **Edit Photo Shows** dialog, kept out of visitors' way:
-it appears in the Select Photo Show menu only when the menu is opened with
-**Shift** held down, or always if `Show Editor=True` is set in the settings
-file.  The dialog lists the shows on the left (New / Rename / Delete) and the
+The **Edit Photo Shows** dialog lists the shows on the left (New / Rename / Delete) and the
 whole folder tree on the right, with a check box on every folder at any level.
 Checking a folder takes it and everything below it, so checking a folder
 absorbs any of its descendants; unchecking one folder inside a checked one
@@ -102,7 +100,6 @@ in the program's directory:
 | Display Subdirectory | Show the subdirectory chain for images below the top level | True |
 | Pause Timeout | Seconds of no user input after which a paused show resumes | 240 |
 | Mode | `Dark` or `Light` color scheme | Dark |
-| Show Editor | If `True`, the Select Photo Show menu always offers "Edit Photo Shows…"; if `False` it appears only when the menu is opened with **Shift** held down | False |
 | Email Timeout | Seconds of no user input after which the remembered email address is forgotten | 60 |
 | Face Detection Threshold | How sure the detector must be before it calls something a face, 0 to 1.  Lower finds more faces, including doubtful ones; higher finds only clear ones | 0.6 |
 

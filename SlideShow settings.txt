@@ -35,7 +35,3 @@ Email Timeout=60
 # 0.6 is the initial setting.
 # Lower finds more faces, including doubtful ones; higher finds only clear ones.
 Face Detection Threshold=0.45
-
-# If True, the Select Photo Show menu always offers "Edit Photo Shows..."
-# If False, hold Shift as you open the menu to reveal it
-Show Editor=False
