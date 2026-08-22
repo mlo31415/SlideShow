@@ -845,22 +845,31 @@ class SlideShow(tk.Tk):
     # with json.JSONDecoder().raw_decode in a loop) -- and rename the file so its name
     # carries the date and time of this latest save.
     def LogSave(self, record: dict) -> None:
+        if self.outputPath is None:         # This session's first save creates the file
+            self.outputPath=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
+        text=json.dumps(record, indent=2, ensure_ascii=False)
+        # Compact the four-number face boxes back onto one line for readability
+        text=re.sub(r"\[\s+(-?\d+),\s+(-?\d+),\s+(-?\d+),\s+(-?\d+)\s+\]", r"[\1, \2, \3, \4]", text)
         try:
-            if self.outputPath is None:     # This session's first save creates the file
-                self.outputPath=os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                             f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
-            text=json.dumps(record, indent=2, ensure_ascii=False)
-            # Compact the four-number face boxes back onto one line for readability
-            text=re.sub(r"\[\s+(-?\d+),\s+(-?\d+),\s+(-?\d+),\s+(-?\d+)\s+\]", r"[\1, \2, \3, \4]", text)
             with open(self.outputPath, "a", encoding="utf-8") as file:
                 file.write(text+"\n\n")
-            newPath=os.path.join(os.path.dirname(self.outputPath),
-                                 f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
-            if newPath != self.outputPath:
+        except OSError as e:
+            messagebox.showwarning("SlideShow", f"This identification could not be saved:\n{e}", parent=self)
+            return                      # The record really is lost; worth interrupting for
+
+        # The name carries the time of the latest save, which is a convenience and not
+        # the saving itself.  If the rename fails -- another program may have the file
+        # open for a moment -- the record is safe under the name it has, so keep that
+        # name, say nothing to whoever is at the screen, and let the next save try again.
+        newPath=os.path.join(os.path.dirname(self.outputPath),
+                             f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
+        if newPath != self.outputPath:
+            try:
                 os.replace(self.outputPath, newPath)
                 self.outputPath=newPath
-        except OSError as e:
-            messagebox.showwarning("SlideShow", f"Could not write the output log:\n{e}", parent=self)
+            except OSError:
+                pass
 
     # Remember the show being displayed and the monitor in use between invocations
     def SaveState(self) -> None:
