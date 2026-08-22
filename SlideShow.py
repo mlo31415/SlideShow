@@ -8,8 +8,9 @@ The directory to be displayed and the other operating parameters are read from
 
     Directories:          The next line is the path of the root directory holding the
                           photos.  What is displayed is a "photo show": a named group
-                          of folders anywhere in that tree, each folder standing for
-                          itself and everything below it.  The menu offers the
+                          of folders anywhere in that tree, each standing for itself
+                          and everything below it, and folders may be left out of
+                          those again.  The menu offers the
                           built-in "All Photos" and whatever shows have been built
                           with "Edit Photo Shows..."; those are kept in
                           "SlideShow shows.json" and the one last displayed is
@@ -108,7 +109,7 @@ from PIL import Image, ImageDraw, ImageTk
 SETTINGS_FILE="SlideShow settings.txt"
 STATE_FILE="SlideShow state.json"
 SHOWS_FILE="SlideShow shows.json"
-SHOWS_VERSION=2                 # 2: the shows file holds only the shows built in the editor
+SHOWS_VERSION=3                 # 2: only the shows built in the editor; 3: they may leave folders out again
 ALL_PHOTOS="All Photos"         # The built-in show: everything under the root directory
 FACE_MODEL="face_detection_yunet_2023mar.onnx"
 IMAGE_EXTENSIONS={".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
@@ -194,6 +195,48 @@ def PruneFolders(folders) -> list[str]:
         if not any(IsCoveredBy(folder, k) for k in kept):
             kept.append(folder)
     return sorted(kept, key=str.casefold)
+
+
+# Is a folder in the show?  A show is a list of chosen folders and a list of folders
+# left out again, each standing for itself and everything below it, and the rule is the
+# familiar one: of the entries covering this folder, the most specific decides.  So
+# "all of Fan Photos except Fan Photos/LASFS" says exactly what it appears to say.
+def FolderIsIncluded(folder: str, chosen, excluded) -> bool:
+    folder=NormalizeFolder(folder)
+    best, included=-1, False
+    for entry in chosen:
+        entry=NormalizeFolder(entry)
+        if IsCoveredBy(folder, entry) and len(entry) > best:
+            best, included=len(entry), True
+    for entry in excluded:
+        entry=NormalizeFolder(entry)
+        if IsCoveredBy(folder, entry) and len(entry) >= best:    # a tie goes to leaving it out
+            best, included=len(entry), False
+    return included
+
+
+# Drop the entries which make no difference: a chosen folder already covered by another
+# with nothing excluded in between, or a folder left out which was never in.  What is
+# stored is then just what the user actually said.
+def TidyRules(chosen, excluded) -> tuple[list[str], list[str]]:
+    chosen={NormalizeFolder(f) for f in chosen if len(NormalizeFolder(f)) > 0}
+    excluded={NormalizeFolder(f) for f in excluded if len(NormalizeFolder(f)) > 0}
+    dropping=True
+    while dropping:
+        dropping=False
+        for entry in sorted(chosen, key=lambda f: (-f.count("/"), f)):
+            if FolderIsIncluded(entry, chosen-{entry}, excluded):
+                chosen=chosen-{entry}       # it was in anyway
+                dropping=True
+                break
+        if dropping:
+            continue
+        for entry in sorted(excluded, key=lambda f: (-f.count("/"), f)):
+            if not FolderIsIncluded(entry, chosen, excluded-{entry}):
+                excluded=excluded-{entry}   # it was out anyway
+                dropping=True
+                break
+    return sorted(chosen, key=str.casefold), sorted(excluded, key=str.casefold)
 
 
 # The total padding a pack() pady or padx setting adds, given the several ways tk
@@ -368,7 +411,7 @@ class SlideShow(tk.Tk):
                 self.savedMonitor=tuple(monitor)
         except (OSError, json.JSONDecodeError):
             pass
-        self.images=self.ScanImages(self.ShowFolders(self.currentShowName))
+        self.images=self.ImagesForShow(self.currentShowName)
         if len(self.images) == 0:       # That show has lost its photos -- use one which has some
             name, images=self.FirstShowWithPhotos()
             if name is not None:
@@ -751,7 +794,9 @@ class SlideShow(tk.Tk):
         try:
             with open(self.showsPath, "r", encoding="utf-8") as file:
                 data=json.load(file)
-            shows=[{"name": str(s["name"]), "folders": [NormalizeFolder(f) for f in s["folders"]]}
+            shows=[{"name": str(s["name"]),
+                    "folders": [NormalizeFolder(f) for f in s["folders"]],
+                    "except": [NormalizeFolder(f) for f in s.get("except", [])]}
                    for s in data.get("shows", []) if isinstance(s, dict) and "name" in s and "folders" in s]
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return []
@@ -767,27 +812,48 @@ class SlideShow(tk.Tk):
 
     def SaveShows(self) -> None:
         try:
+            # An "except" list is written only when the show has one, so a plain show
+            # stays plain in the file
+            shows=[{k: v for k, v in show.items() if k != "except" or len(v) > 0} for show in self.shows]
             with open(self.showsPath, "w", encoding="utf-8") as file:
-                json.dump({"version": SHOWS_VERSION, "shows": self.shows}, file, indent=2, ensure_ascii=False)
+                json.dump({"version": SHOWS_VERSION, "shows": shows}, file, indent=2, ensure_ascii=False)
         except OSError as e:
             self.ShowMessage("SlideShow", f"Could not save the photo shows:\n{e}", warning=True)
 
     # The shows on offer: the built-in "everything" show, then those built in the editor
     def AllShows(self) -> list[dict]:
-        return [{"name": ALL_PHOTOS, "folders": [os.path.basename(d) for d in self.tlds]}]+self.shows
+        return [{"name": ALL_PHOTOS, "folders": [os.path.basename(d) for d in self.tlds],
+                 "except": []}]+self.shows
 
-    # The folders of a named show as absolute paths: folders which have gone missing are
-    # skipped, and a folder already covered by another is dropped so that no photo is
-    # scanned -- and shown -- twice
+    # The absolute paths of a show's chosen folders: those which have gone missing are
+    # skipped, and one already covered by another is dropped so that no photo is scanned
+    # -- and shown -- twice.  (A folder covered by another but with something excluded in
+    # between is kept: it is saying something the broader folder does not.)
     def ShowFolders(self, name: str) -> list[str]:
-        folders=next((show["folders"] for show in self.AllShows() if show["name"] == name), [])
-        paths=[os.path.join(self.rootDirectory, folder.replace("/", os.sep)) for folder in PruneFolders(folders)]
+        show=next((show for show in self.AllShows() if show["name"] == name), None)
+        if show is None:
+            return []
+        chosen, excluded=TidyRules(show["folders"], show.get("except", []))
+        chosen=[f for f in chosen if not any(IsCoveredBy(f, other) and f != other for other in chosen)]
+        paths=[os.path.join(self.rootDirectory, folder.replace("/", os.sep)) for folder in chosen]
         return [path for path in paths if os.path.isdir(path)]
+
+    # The absolute paths a show leaves out again
+    def ShowExclusions(self, name: str) -> list[str]:
+        show=next((show for show in self.AllShows() if show["name"] == name), None)
+        if show is None:
+            return []
+        _, excluded=TidyRules(show["folders"], show.get("except", []))
+        return [os.path.join(self.rootDirectory, folder.replace("/", os.sep)) for folder in excluded]
+
+    # The photos a named show comes to
+    def ImagesForShow(self, name: str) -> list[str]:
+        return self.ScanImages(self.ShowFolders(name), self.ShowExclusions(name))
 
     # The first show which actually has photos, and its images: (None, []) if none has
     def FirstShowWithPhotos(self) -> tuple[str | None, list[str]]:
         for show in self.AllShows():
-            images=self.ScanImages(self.ShowFolders(show["name"]))
+            images=self.ImagesForShow(show["name"])
             if len(images) > 0:
                 return show["name"], images
         return None, []
@@ -827,7 +893,7 @@ class SlideShow(tk.Tk):
         self.SaveShows()
         if not any(show["name"] == self.currentShowName for show in self.AllShows()):
             self.currentShowName=ALL_PHOTOS
-        images=self.ScanImages(self.ShowFolders(self.currentShowName))
+        images=self.ImagesForShow(self.currentShowName)
         if len(images) == 0:
             name, images=self.FirstShowWithPhotos()
             if name is None:
@@ -895,7 +961,7 @@ class SlideShow(tk.Tk):
         name=self.showVar.get()
         if name == self.currentShowName:
             return
-        images=self.ScanImages(self.ShowFolders(name))
+        images=self.ImagesForShow(name)
         if len(images) == 0:
             self.showVar.set(self.currentShowName)      # Undo the pick
             self.ShowMessage("Select Photo Show", f'"{name}" has no photos in it, so the show has not been changed.')
@@ -947,11 +1013,15 @@ class SlideShow(tk.Tk):
     # Return the full pathnames of all images in the trees under the listed directories,
     # in sorted order within each directory, directories in the order listed
     @staticmethod
-    def ScanImages(rootDirectories: list[str]) -> list[str]:
+    def ScanImages(rootDirectories: list[str], excluded=()) -> list[str]:
+        keepOut={os.path.normcase(os.path.abspath(p)) for p in excluded}
         images=[]
         for rootDirectory in rootDirectories:
             for dirpath, dirnames, filenames in os.walk(rootDirectory):
                 dirnames.sort(key=str.casefold)
+                # Folders left out of the show are not descended into at all
+                dirnames[:]=[d for d in dirnames
+                             if os.path.normcase(os.path.abspath(os.path.join(dirpath, d))) not in keepOut]
                 for fname in sorted(filenames, key=str.casefold):
                     if os.path.splitext(fname)[1].casefold() in IMAGE_EXTENSIONS:
                         images.append(os.path.join(dirpath, fname))
@@ -1703,9 +1773,11 @@ class ShowEditor(tk.Toplevel):
         super().__init__(app)
         self.app=app
         self.rootDirectory=app.rootDirectory
-        self.shows=[{"name": show["name"], "folders": list(show["folders"])} for show in app.shows]      # Working copy
+        self.shows=[{"name": show["name"], "folders": list(show["folders"]),                            # Working copy
+                     "except": list(show.get("except", []))} for show in app.shows]
         self.originalDigest=self.Digest(self.shows)     # To tell later whether anything was changed
-        self.selected: set[str]=set()
+        self.selected: set[str]=set()       # Folders chosen
+        self.excluded: set[str]=set()       # ...and folders left out of them again
         self.countGeneration=0
         self.counts=queue.Queue()       # Photo counts from the counting threads
         self.pollId=None
@@ -1744,8 +1816,14 @@ class ShowEditor(tk.Toplevel):
         for text, command in (("New", self.OnNew), ("Rename", self.OnRename), ("Delete", self.OnDelete)):
             tk.Button(showButtons, text=text, font=("Segoe UI", 10), width=8, command=command).pack(side=tk.LEFT, padx=(0, 4))
 
-        self.countLabel=tk.Label(self, text="", font=("Segoe UI", 10), fg="#606060")
-        self.countLabel.grid(row=2, column=1, sticky="w", padx=6, pady=(6, 0))
+        # Under the tree: the show in words, and what it comes to
+        below=tk.Frame(self)
+        below.grid(row=2, column=1, sticky="ew", padx=6, pady=(6, 0))
+        self.summaryLabel=tk.Label(below, text="", font=("Segoe UI", 10), justify=tk.LEFT,
+                                   anchor="w", wraplength=560)
+        self.summaryLabel.pack(fill=tk.X)
+        self.countLabel=tk.Label(below, text="", font=("Segoe UI", 10), fg="#606060", anchor="w")
+        self.countLabel.pack(fill=tk.X)
 
         dialogButtons=tk.Frame(self)
         dialogButtons.grid(row=3, column=0, columnspan=2, pady=14)
@@ -1776,34 +1854,50 @@ class ShowEditor(tk.Toplevel):
             return []
         return [f"{folder}/{name}" if len(folder) > 0 else name for name in names]
 
-    # How a folder should appear: checked when it or an ancestor is selected, partly
-    # checked when only something below it is
-    def State(self, folder: str) -> str:
-        if any(IsCoveredBy(folder, chosen) for chosen in self.selected):
-            return "checked"
-        if any(IsCoveredBy(chosen, folder) for chosen in self.selected):
-            return "partial"
-        return "unchecked"
+    # Is this folder in the show?  There are only the two answers: the box says whether
+    # the folder's photos are shown, and the most specific rule covering it decides.
+    def IsIncluded(self, folder: str) -> bool:
+        return FolderIsIncluded(folder, self.selected, self.excluded)
 
+    # Ticking a folder takes it and everything below it; unticking leaves out it and
+    # everything below it.  Neither touches the folder's parent or its brothers and
+    # sisters, and ticking a folder clears whatever was said about its contents, so
+    # rules can never pile up out of sight.
     def Toggle(self, folder: str) -> None:
-        if self.State(folder) != "checked":
-            self.selected={chosen for chosen in self.selected if not IsCoveredBy(chosen, folder)}
+        folder=NormalizeFolder(folder)
+        if self.IsIncluded(folder):
+            if folder in self.selected:
+                self.selected.discard(folder)       # it was chosen in its own right
+            else:
+                self.excluded.add(folder)           # it comes in with a folder above it
+        else:
+            self.excluded.discard(folder)
             self.selected.add(folder)
-            return
-        if folder in self.selected:
-            self.selected.discard(folder)
-            return
-        # Checked because an ancestor is: drop the ancestor, but keep everything else it
-        # covered by selecting the siblings along the path down to this folder
-        ancestor=next(chosen for chosen in self.selected if IsCoveredBy(folder, chosen))
-        self.selected.discard(ancestor)
-        current=ancestor
-        for name in folder[len(ancestor):].strip("/").split("/"):
-            step=f"{current}/{name}"
-            for child in self.ChildFolders(current):
-                if child != step:
-                    self.selected.add(child)
-            current=step
+        Below=lambda entry: entry != folder and IsCoveredBy(entry, folder)
+        self.selected={f for f in self.selected if not Below(f)}
+        self.excluded={f for f in self.excluded if not Below(f)}
+        chosen, excluded=TidyRules(self.selected, self.excluded)
+        self.selected, self.excluded=set(chosen), set(excluded)
+
+    # What is chosen or left out strictly below a folder, for the note on its row
+    def RulesUnder(self, folder: str) -> tuple[int, int]:
+        chosen=sum(1 for f in self.selected if f != folder and IsCoveredBy(f, folder))
+        excluded=sum(1 for f in self.excluded if f != folder and IsCoveredBy(f, folder))
+        return chosen, excluded
+
+    # The show in words, for the line under the tree
+    def SummaryText(self) -> str:
+        if len(self.selected) == 0:
+            return "No folders chosen"
+        parts=[]
+        for folder in sorted(self.selected, key=str.casefold):
+            inside=sorted((e for e in self.excluded if e != folder and IsCoveredBy(e, folder)), key=str.casefold)
+            if len(inside) > 0:
+                shortened=[e[len(folder)+1:] for e in inside]
+                parts.append(f"all of {folder} except "+", ".join(shortened))
+            else:
+                parts.append(folder)
+        return "; ".join(parts)
 
 
     # -------------------- The tree --------------------
@@ -1811,14 +1905,12 @@ class ShowEditor(tk.Toplevel):
     def MakeCheckboxIcons() -> dict[str, ImageTk.PhotoImage]:
         icons={}
         size, ss=14, 4
-        for name in ("unchecked", "checked", "partial"):
+        for name in ("unchecked", "checked"):
             image=Image.new("RGBA", (size*ss, size*ss), (0, 0, 0, 0))
             draw=ImageDraw.Draw(image)
             draw.rectangle((ss, ss, (size-2)*ss, (size-2)*ss), fill="white", outline="#606060", width=ss)
             if name == "checked":
                 draw.line([(4*ss, 7*ss), (6*ss, 9*ss), (9*ss, 4*ss)], fill="#202020", width=2*ss)
-            elif name == "partial":
-                draw.rectangle((4*ss, 4*ss, 9*ss, 9*ss), fill="#606060")
             icons[name]=ImageTk.PhotoImage(image.resize((size, size), Image.LANCZOS))
         return icons
 
@@ -1831,8 +1923,29 @@ class ShowEditor(tk.Toplevel):
             if not os.path.isdir(os.path.join(self.rootDirectory, folder.replace("/", os.sep))):
                 self.tree.insert("", tk.END, iid=self.MISSING+folder, text=f"  {folder}   (folder no longer exists)",
                                  image=self.icons["checked"], tags=("missing",))
+        self.RevealRules()
         self.RefreshImages()
         self.UpdateCount()
+
+    # Open every branch which has something chosen or left out inside it, so that a
+    # show's shape is visible on opening rather than hidden under a closed folder
+    def RevealRules(self) -> None:
+        for rule in sorted(self.selected|self.excluded, key=str.casefold):
+            parts=rule.split("/")
+            for depth in range(1, len(parts)):
+                parent="/".join(parts[:depth])
+                if not self.tree.exists(parent):
+                    break
+                self.FillFolder(parent)
+                self.tree.item(parent, open=True)
+
+    # Replace a folder's "not filled in yet" marker with its real children
+    def FillFolder(self, folder: str) -> None:
+        placeholder=folder+self.PLACEHOLDER
+        if self.tree.exists(placeholder):
+            self.tree.delete(placeholder)
+            for child in self.ChildFolders(folder):
+                self.InsertFolder(folder, child)
 
     def InsertFolder(self, parent: str, folder: str) -> None:
         self.tree.insert(parent, tk.END, iid=folder, text="  "+os.path.basename(folder), image=self.icons["unchecked"])
@@ -1854,9 +1967,7 @@ class ShowEditor(tk.Toplevel):
             if iid.endswith(self.PLACEHOLDER):
                 parent=iid[:-len(self.PLACEHOLDER)]
                 if self.tree.item(parent, "open") or parent == justOpened:
-                    self.tree.delete(iid)
-                    for child in self.ChildFolders(parent):
-                        self.InsertFolder(parent, child)
+                    self.FillFolder(parent)
         self.RefreshImages()
 
     def AllItems(self, parent: str="") -> list[str]:
@@ -1866,10 +1977,21 @@ class ShowEditor(tk.Toplevel):
             items.extend(self.AllItems(iid))
         return items
 
+    # Each row shows whether its folder is in the show, and -- since a collapsed
+    # folder would otherwise hide it -- a note of anything chosen or left out below it
     def RefreshImages(self) -> None:
         for iid in self.AllItems():
-            if not iid.endswith(self.PLACEHOLDER) and not iid.startswith(self.MISSING):
-                self.tree.item(iid, image=self.icons[self.State(iid)])
+            if iid.endswith(self.PLACEHOLDER) or iid.startswith(self.MISSING):
+                continue
+            chosen, excluded=self.RulesUnder(iid)
+            notes=[]
+            if excluded > 0:
+                notes.append(f"{excluded} folder{'' if excluded == 1 else 's'} left out")
+            if chosen > 0 and not self.IsIncluded(iid):
+                notes.append(f"{chosen} folder{'' if chosen == 1 else 's'} chosen inside")
+            note="   ("+", ".join(notes)+")" if len(notes) > 0 else ""
+            self.tree.item(iid, image=self.icons["checked" if self.IsIncluded(iid) else "unchecked"],
+                           text="  "+os.path.basename(iid)+note)
 
     def OnTreeClick(self, event) -> None:
         iid=self.tree.identify_row(event.y)
@@ -1878,7 +2000,9 @@ class ShowEditor(tk.Toplevel):
         if "indicator" in self.tree.identify_element(event.x, event.y):
             return                      # The expand/collapse arrow does its own job
         if iid.startswith(self.MISSING):
-            self.selected.discard(iid[len(self.MISSING):])      # Cleaning up a folder which has gone
+            gone=iid[len(self.MISSING):]                        # Cleaning up a folder which has gone
+            self.selected.discard(gone)
+            self.excluded.discard(gone)
             self.tree.delete(iid)
         else:
             self.Toggle(iid)
@@ -1891,14 +2015,16 @@ class ShowEditor(tk.Toplevel):
     def UpdateCount(self) -> None:
         self.countGeneration+=1
         generation=self.countGeneration
-        folders=PruneFolders(self.selected)
+        self.summaryLabel.config(text=self.SummaryText())
+        folders, excluded=TidyRules(self.selected, self.excluded)
         if len(folders) == 0:
             self.countLabel.config(text="No folders chosen")
             return
         self.countLabel.config(text=f"{len(folders)} folder{'' if len(folders) == 1 else 's'}, counting photos...")
         paths=[os.path.join(self.rootDirectory, folder.replace("/", os.sep)) for folder in folders]
+        keepOut=[os.path.join(self.rootDirectory, folder.replace("/", os.sep)) for folder in excluded]
         def Count() -> None:
-            found=len(SlideShow.ScanImages([p for p in paths if os.path.isdir(p)]))
+            found=len(SlideShow.ScanImages([p for p in paths if os.path.isdir(p)], keepOut))
             self.counts.put((generation, len(folders), found))
         threading.Thread(target=Count, daemon=True).start()
 
@@ -1926,7 +2052,7 @@ class ShowEditor(tk.Toplevel):
             self.showList.insert(tk.END, show["name"])
         if len(self.shows) == 0:        # Nothing built yet: All Photos is built in and not listed here
             self.loadedIndex=-1
-            self.selected=set()
+            self.selected, self.excluded=set(), set()
             self.foldersLabel.config(text='Press "New" to make a photo show')
             if hasattr(self, "tree"):
                 self.FillTree()
@@ -1942,7 +2068,8 @@ class ShowEditor(tk.Toplevel):
 
     def LoadShow(self, index: int) -> None:
         self.loadedIndex=index
-        self.selected=set(PruneFolders(self.shows[index]["folders"]))
+        chosen, excluded=TidyRules(self.shows[index]["folders"], self.shows[index].get("except", []))
+        self.selected, self.excluded=set(chosen), set(excluded)
         self.foldersLabel.config(text=f'Folders in "{self.shows[index]["name"]}"')
         if hasattr(self, "tree"):
             self.FillTree()
@@ -1950,7 +2077,9 @@ class ShowEditor(tk.Toplevel):
     # Keep whatever has been ticked for the show being left
     def StoreShow(self) -> None:
         if 0 <= getattr(self, "loadedIndex", -1) < len(self.shows):
-            self.shows[self.loadedIndex]["folders"]=PruneFolders(self.selected)
+            chosen, excluded=TidyRules(self.selected, self.excluded)
+            self.shows[self.loadedIndex]["folders"]=chosen
+            self.shows[self.loadedIndex]["except"]=excluded
 
     def OnPickShow(self, event=None) -> None:
         index=self.CurrentIndex()
@@ -1976,7 +2105,7 @@ class ShowEditor(tk.Toplevel):
         if name is None:
             return
         self.StoreShow()
-        self.shows.append({"name": name, "folders": []})
+        self.shows.append({"name": name, "folders": [], "except": []})
         self.FillShowList(name)
 
     def OnRename(self) -> None:
@@ -2004,7 +2133,11 @@ class ShowEditor(tk.Toplevel):
     # (the same folders in a different order, or a redundant one, is no change)
     @staticmethod
     def Digest(shows: list[dict]) -> list:
-        return [(show["name"], tuple(PruneFolders(show["folders"]))) for show in shows]
+        digest=[]
+        for show in shows:
+            chosen, excluded=TidyRules(show["folders"], show.get("except", []))
+            digest.append((show["name"], tuple(chosen), tuple(excluded)))
+        return digest
 
     # Cancel throws away everything done since the dialog was opened, so ask first
     def OnCancel(self) -> None:

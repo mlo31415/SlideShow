@@ -19,7 +19,7 @@ wrong answer shows a visitor the wrong photographs.
 |------|--------|
 | `test_settings.py` | Reading the settings file: the `Directories:` block, commented-out values, names matched without regard to case |
 | `test_photo_shows.py` | What a show stands for (overlapping and missing folders), the shows file and its v1→v2 tidying, finding the photos |
-| `test_folder_picking.py` | The check boxes in Edit Photo Shows: ticking, unticking, and unticking *inside* a ticked folder |
+| `test_folder_picking.py` | The check boxes in Edit Photo Shows: which folders a show comes to, ticking, unticking, and unticking *inside* a ticked folder |
 | `test_display_values.py` | Photo dates, the face-detection threshold, pack padding, the album line |
 
 Where the code under test is a method rather than a plain function, the tests
@@ -50,10 +50,10 @@ When adding a test, prefer one that needs none of the three. If a bug turns up
 in code that does need them, that is usually a sign the logic wants pulling out
 into a function that does not.
 
-## A note on `test_unticking_inside_a_folder_loses_that_folder_s_own_photos`
+## A note on the folder-picking tests
 
-That test records a real defect (**SS-19**) rather than approving of it: a show
-can only say "this folder and everything below it", so unticking something
-inside a ticked folder drops any photos sitting loose in the folders along the
-way. The test states what happens today and says what to change when the
-defect is fixed.
+`test_folder_picking.py` grew out of a real defect (**SS-19**, fixed): a show
+used to be able to say only "this folder and everything below it", so unticking
+something inside a ticked folder dropped the photos sitting loose in the folders
+along the way. A show can now leave folders out again, and those tests pin the
+rule down — including the cases that made the old arrangement wrong.

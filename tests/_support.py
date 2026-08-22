@@ -67,10 +67,11 @@ def bare_show(ss, **attributes):
     return show
 
 
-def bare_editor(ss, rootDirectory, selected=()):
-    """A ShowEditor object which was never constructed, holding just the folder
-    selection its picking logic works on."""
+def bare_editor(ss, rootDirectory, selected=(), excluded=()):
+    """A ShowEditor object which was never constructed, holding just the folders
+    chosen and left out again that its picking logic works on."""
     editor = object.__new__(ss.ShowEditor)
     editor.rootDirectory = str(rootDirectory)
     editor.selected = set(selected)
+    editor.excluded = set(excluded)
     return editor

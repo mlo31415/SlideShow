@@ -109,8 +109,15 @@ class TheShowsFile(unittest.TestCase):
         self.assertIn("New Album", self.show.AllShows()[0]["folders"])
 
     def test_your_own_shows_are_read_back(self):
-        self.write({"version": 2, "shows": [{"name": "Mine", "folders": ["Worldcons"]}]})
-        self.assertEqual(self.show.LoadShows(), [{"name": "Mine", "folders": ["Worldcons"]}])
+        self.write({"version": ss.SHOWS_VERSION,
+                    "shows": [{"name": "Mine", "folders": ["Worldcons"], "except": ["Worldcons/LAcon"]}]})
+        self.assertEqual(self.show.LoadShows(),
+                         [{"name": "Mine", "folders": ["Worldcons"], "except": ["Worldcons/LAcon"]}])
+
+    def test_a_show_with_nothing_left_out_reads_back_with_an_empty_list(self):
+        """So the rest of the code never has to ask whether the key is there."""
+        self.write({"version": ss.SHOWS_VERSION, "shows": [{"name": "Mine", "folders": ["Worldcons"]}]})
+        self.assertEqual(self.show.LoadShows(), [{"name": "Mine", "folders": ["Worldcons"], "except": []}])
 
     def test_an_old_file_loses_its_made_up_shows(self):
         """Version 1 stored All Photos and one show per top-level folder; only
@@ -123,22 +130,40 @@ class TheShowsFile(unittest.TestCase):
         self.assertEqual([s["name"] for s in self.show.LoadShows()], ["Mine"])
         self.assertTrue(self.show.showsMigrated, "the tidied file wants writing back")
 
-    def test_a_new_file_is_left_alone(self):
+    def test_a_current_file_is_left_alone(self):
         """The same shapes are legitimate once the user has made them."""
-        self.write({"version": 2, "shows": [{"name": "Worldcons", "folders": ["Worldcons"]}]})
+        self.write({"version": ss.SHOWS_VERSION, "shows": [{"name": "Worldcons", "folders": ["Worldcons"]}]})
         self.assertEqual([s["name"] for s in self.show.LoadShows()], ["Worldcons"])
         self.assertFalse(self.show.showsMigrated)
+
+    def test_a_version_2_file_keeps_its_shows_and_is_restamped(self):
+        """Version 2 had no way to leave a folder out again; nothing else changed."""
+        self.write({"version": 2, "shows": [{"name": "Mine", "folders": ["Worldcons"]}]})
+        self.assertEqual([s["name"] for s in self.show.LoadShows()], ["Mine"])
+        self.assertTrue(self.show.showsMigrated, "so the version stamp is brought up to date")
 
     def test_rubbish_in_the_file_is_survivable(self):
         self.showsPath.write_text("{ this is not json", encoding="utf-8")
         self.assertEqual(self.show.LoadShows(), [])
 
     def test_saving_stamps_the_version(self):
-        self.show.shows = [{"name": "Mine", "folders": ["Worldcons"]}]
+        self.show.shows = [{"name": "Mine", "folders": ["Worldcons"], "except": []}]
         self.show.SaveShows()
         written = json.loads(self.showsPath.read_text(encoding="utf-8"))
         self.assertEqual(written["version"], ss.SHOWS_VERSION)
-        self.assertEqual(written["shows"], self.show.shows)
+
+    def test_a_show_with_nothing_left_out_is_written_plainly(self):
+        """An empty except list is left out of the file, so a plain show stays plain."""
+        self.show.shows = [{"name": "Mine", "folders": ["Worldcons"], "except": []}]
+        self.show.SaveShows()
+        written = json.loads(self.showsPath.read_text(encoding="utf-8"))
+        self.assertEqual(written["shows"], [{"name": "Mine", "folders": ["Worldcons"]}])
+
+    def test_what_is_left_out_is_written_down(self):
+        self.show.shows = [{"name": "Mine", "folders": ["Fan Photos"], "except": ["Fan Photos/LASFS"]}]
+        self.show.SaveShows()
+        written = json.loads(self.showsPath.read_text(encoding="utf-8"))
+        self.assertEqual(written["shows"][0]["except"], ["Fan Photos/LASFS"])
 
 
 class FindingThePhotos(unittest.TestCase):

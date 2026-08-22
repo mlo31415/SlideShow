@@ -1,8 +1,10 @@
 """Ticking folders in the Edit Photo Shows dialog.
 
-A ticked folder stands for everything below it, which makes unticking one of
-its subfolders the interesting case: the rest of that folder has to stay in the
-show.  This is the arithmetic behind the check boxes, tested without a window.
+A show says which folders are in it and which are left out again, each standing
+for itself and everything below it, and the most specific of those decides.
+Ticking a folder takes it and everything below; unticking leaves out it and
+everything below; neither touches the folder's parent or its brothers and
+sisters.  This is that arithmetic, tested without a window.
 """
 import sys
 import unittest
@@ -15,13 +17,57 @@ from _support import load_ss, build_tree, bare_editor        # noqa: E402
 ss = load_ss()
 
 
+class TheRule(unittest.TestCase):
+    """Of the entries covering a folder, the most specific one decides."""
+
+    def test_a_chosen_folder_is_in(self):
+        self.assertTrue(ss.FolderIsIncluded("A", ["A"], []))
+
+    def test_everything_below_a_chosen_folder_is_in(self):
+        self.assertTrue(ss.FolderIsIncluded("A/B/C", ["A"], []))
+
+    def test_a_folder_nobody_mentioned_is_out(self):
+        self.assertFalse(ss.FolderIsIncluded("B", ["A"], []))
+
+    def test_a_folder_left_out_is_out(self):
+        self.assertFalse(ss.FolderIsIncluded("A/B", ["A"], ["A/B"]))
+
+    def test_everything_below_one_left_out_is_out(self):
+        self.assertFalse(ss.FolderIsIncluded("A/B/C", ["A"], ["A/B"]))
+
+    def test_the_rest_of_the_chosen_folder_is_still_in(self):
+        self.assertTrue(ss.FolderIsIncluded("A/D", ["A"], ["A/B"]))
+        self.assertTrue(ss.FolderIsIncluded("A", ["A"], ["A/B"]), "including the folder itself")
+
+    def test_something_chosen_again_below_what_was_left_out(self):
+        self.assertTrue(ss.FolderIsIncluded("A/B/C", ["A", "A/B/C"], ["A/B"]))
+        self.assertFalse(ss.FolderIsIncluded("A/B/D", ["A", "A/B/C"], ["A/B"]))
+
+
+class TidyingTheRules(unittest.TestCase):
+    """What is stored is what the user actually said, and no more."""
+
+    def test_a_folder_inside_a_chosen_one_is_dropped(self):
+        self.assertEqual(ss.TidyRules(["A", "A/B"], []), (["A"], []))
+
+    def test_unless_something_is_left_out_in_between(self):
+        chosen, excluded = ss.TidyRules(["A", "A/B/C"], ["A/B"])
+        self.assertEqual((chosen, excluded), (["A", "A/B/C"], ["A/B"]))
+
+    def test_leaving_out_what_was_never_in_says_nothing(self):
+        self.assertEqual(ss.TidyRules(["A"], ["B/C"]), (["A"], []))
+
+    def test_leaving_out_the_same_thing_twice_over_says_nothing(self):
+        self.assertEqual(ss.TidyRules(["A"], ["A/B", "A/B/C"]), (["A"], ["A/B"]))
+
+
 class Ticking(unittest.TestCase):
     def setUp(self):
         self.tmp = TemporaryDirectory()
         self.root = build_tree(Path(self.tmp.name), {
-            "Fan Photos": [],
+            "Fan Photos": ["party.jpg"],                    # a photo loose in the parent
             "Fan Photos/Ackermansion": ["a.jpg"],
-            "Fan Photos/LASFS": ["b.jpg"],
+            "Fan Photos/LASFS": ["clubhouse.jpg"],          # and one in the middle folder
             "Fan Photos/LASFS/1941-1943": ["c.jpg"],
             "Fan Photos/NESFA": ["d.jpg"],
             "Worldcons": ["e.jpg"]})
@@ -29,103 +75,94 @@ class Ticking(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def editor(self, selected=()):
-        return bare_editor(ss, self.root, selected)
+    def editor(self, selected=(), excluded=()):
+        return bare_editor(ss, self.root, selected, excluded)
+
+    def photos(self, editor):
+        """The photos this selection would actually show."""
+        chosen, excluded = ss.TidyRules(editor.selected, editor.excluded)
+        roots = [self.root/f.replace("/", "\\") for f in chosen]
+        keepOut = [str(self.root/f.replace("/", "\\")) for f in excluded]
+        return sorted(Path(p).name for p in
+                      ss.SlideShow.ScanImages([str(r) for r in roots if r.is_dir()], keepOut))
 
     # ── how a folder shows ───────────────────────────────────────────────────
-    def test_a_ticked_folder_is_ticked(self):
-        self.assertEqual(self.editor(["Fan Photos"]).State("Fan Photos"), "checked")
-
-    def test_everything_below_a_ticked_folder_is_ticked(self):
+    def test_a_ticked_folder_and_everything_below_it_is_ticked(self):
         editor = self.editor(["Fan Photos"])
-        self.assertEqual(editor.State("Fan Photos/LASFS"), "checked")
-        self.assertEqual(editor.State("Fan Photos/LASFS/1941-1943"), "checked")
+        self.assertTrue(editor.IsIncluded("Fan Photos"))
+        self.assertTrue(editor.IsIncluded("Fan Photos/LASFS/1941-1943"))
 
-    def test_a_folder_with_something_ticked_inside_is_partly_ticked(self):
-        self.assertEqual(self.editor(["Fan Photos/LASFS"]).State("Fan Photos"), "partial")
-
-    def test_anything_else_is_unticked(self):
-        self.assertEqual(self.editor(["Fan Photos"]).State("Worldcons"), "unchecked")
+    def test_a_folder_left_out_is_not_ticked_but_its_parent_still_is(self):
+        editor = self.editor(["Fan Photos"], ["Fan Photos/LASFS"])
+        self.assertFalse(editor.IsIncluded("Fan Photos/LASFS"))
+        self.assertTrue(editor.IsIncluded("Fan Photos"))
+        self.assertTrue(editor.IsIncluded("Fan Photos/NESFA"))
 
     # ── ticking and unticking ────────────────────────────────────────────────
-    def test_ticking_a_folder_adds_it(self):
+    def test_ticking_takes_the_folder_and_everything_below(self):
         editor = self.editor()
-        editor.Toggle("Worldcons")
-        self.assertEqual(editor.selected, {"Worldcons"})
-
-    def test_ticking_a_folder_absorbs_the_ones_inside_it(self):
-        """They would be redundant, and would scan the same photos twice."""
-        editor = self.editor(["Fan Photos/LASFS", "Fan Photos/NESFA", "Worldcons"])
         editor.Toggle("Fan Photos")
-        self.assertEqual(editor.selected, {"Fan Photos", "Worldcons"})
+        self.assertEqual(self.photos(editor),
+                         ["a.jpg", "c.jpg", "clubhouse.jpg", "d.jpg", "party.jpg"])
 
-    def test_unticking_a_folder_which_was_ticked_removes_it(self):
+    def test_unticking_a_folder_of_its_own_removes_it(self):
         editor = self.editor(["Fan Photos", "Worldcons"])
         editor.Toggle("Fan Photos")
-        self.assertEqual(editor.selected, {"Worldcons"})
+        self.assertEqual(self.photos(editor), ["e.jpg"])
 
-    def test_unticking_inside_a_ticked_folder_keeps_the_rest(self):
-        """The parent goes, and its other children take its place, so only the
-        folder that was unticked leaves the show."""
-        editor = self.editor(["Fan Photos"])
-        editor.Toggle("Fan Photos/LASFS")
-        self.assertEqual(editor.selected, {"Fan Photos/Ackermansion", "Fan Photos/NESFA"})
-        self.assertEqual(editor.State("Fan Photos/LASFS"), "unchecked")
-        self.assertEqual(editor.State("Fan Photos/NESFA"), "checked")
-        self.assertEqual(editor.State("Fan Photos"), "partial")
-
-    def test_unticking_deep_inside_a_ticked_folder_keeps_the_other_branches(self):
+    def test_unticking_inside_a_ticked_folder_leaves_only_that_folder_out(self):
+        """SS-19: the photos loose in the folders above it must stay in the show."""
         editor = self.editor(["Fan Photos"])
         editor.Toggle("Fan Photos/LASFS/1941-1943")
-        self.assertEqual(editor.State("Fan Photos/LASFS/1941-1943"), "unchecked")
-        self.assertEqual(editor.State("Fan Photos/Ackermansion"), "checked")
-        self.assertEqual(editor.State("Fan Photos/NESFA"), "checked")
-        # LASFS held nothing else, so nothing under it is chosen any more
-        self.assertEqual(editor.State("Fan Photos/LASFS"), "unchecked")
+        self.assertEqual(self.photos(editor), ["a.jpg", "clubhouse.jpg", "d.jpg", "party.jpg"])
+        self.assertNotIn("c.jpg", self.photos(editor), "the folder unticked, as asked")
 
-    def test_ticking_it_again_puts_it_back(self):
+    def test_unticking_a_whole_branch_leaves_out_what_is_below_it(self):
         editor = self.editor(["Fan Photos"])
         editor.Toggle("Fan Photos/LASFS")
+        self.assertEqual(self.photos(editor), ["a.jpg", "d.jpg", "party.jpg"])
+
+    def test_ticking_the_parent_again_brings_everything_back(self):
+        """Unticking then ticking a folder clears whatever was said inside it, so
+        rules can never pile up out of sight."""
+        editor = self.editor(["Fan Photos"])
         editor.Toggle("Fan Photos/LASFS")
-        self.assertEqual(editor.State("Fan Photos/LASFS"), "checked")
-        self.assertEqual(editor.State("Fan Photos/NESFA"), "checked")
+        editor.Toggle("Fan Photos")                          # untick the parent
+        editor.Toggle("Fan Photos")                          # and tick it again
+        self.assertEqual(self.photos(editor),
+                         ["a.jpg", "c.jpg", "clubhouse.jpg", "d.jpg", "party.jpg"])
+        self.assertEqual(editor.excluded, set(), "nothing left over from before")
 
-    def test_what_is_stored_never_overlaps(self):
+    def test_ticking_a_folder_which_was_left_out_puts_it_back(self):
+        editor = self.editor(["Fan Photos"], ["Fan Photos/LASFS"])
+        editor.Toggle("Fan Photos/LASFS")
+        self.assertTrue(editor.IsIncluded("Fan Photos/LASFS"))
+        self.assertEqual(editor.excluded, set())
+
+    def test_neither_parents_nor_brothers_and_sisters_are_touched(self):
         editor = self.editor(["Fan Photos"])
+        editor.Toggle("Fan Photos/LASFS")
+        self.assertTrue(editor.IsIncluded("Fan Photos"), "the parent stays in")
+        self.assertTrue(editor.IsIncluded("Fan Photos/NESFA"), "and so do its brothers")
+        self.assertFalse(editor.IsIncluded("Worldcons"), "an unrelated folder is unaffected")
+
+    def test_ticking_a_folder_inside_one_left_out(self):
+        editor = self.editor(["Fan Photos"], ["Fan Photos/LASFS"])
         editor.Toggle("Fan Photos/LASFS/1941-1943")
-        self.assertEqual(sorted(editor.selected), ss.PruneFolders(editor.selected),
-                         "a stored folder is never inside another")
+        self.assertEqual(self.photos(editor), ["a.jpg", "c.jpg", "d.jpg", "party.jpg"])
+        self.assertNotIn("clubhouse.jpg", self.photos(editor), "LASFS itself is still out")
 
-    def test_unticking_inside_a_folder_loses_that_folder_s_own_photos(self):
-        """KNOWN LIMITATION -- finding SS-19, recorded rather than accepted.
+    # ── what the user is shown about it ──────────────────────────────────────
+    def test_the_rows_note_what_is_hidden_below_them(self):
+        editor = self.editor(["Fan Photos"], ["Fan Photos/LASFS"])
+        self.assertEqual(editor.RulesUnder("Fan Photos"), (0, 1))
+        self.assertEqual(editor.RulesUnder("Worldcons"), (0, 0))
 
-        A show can only say "this folder and everything below it", so unticking
-        something inside a ticked folder is done by putting that folder's other
-        *folders* in its place.  Photos sitting directly in the folders along
-        the way have no folder of their own and so drop out of the show, though
-        the visitor only meant to exclude the one folder they unticked.
-
-        This test states what happens today.  When SS-19 is fixed -- most
-        likely by recording exclusions instead of rewriting the selection --
-        it should fail, and the expectations below are the ones to change.
-        """
-        build_tree(self.root, {"Fan Photos": ["party.jpg"],
-                               "Fan Photos/LASFS": ["clubhouse.jpg"]})
-        editor = self.editor(["Fan Photos"])
-        before = self.photos(editor.selected)
-        editor.Toggle("Fan Photos/LASFS/1941-1943")
-        after = self.photos(editor.selected)
-        self.assertIn("party.jpg", before)
-        self.assertNotIn("party.jpg", after, "the parent folder's own photo goes too")
-        self.assertNotIn("clubhouse.jpg", after, "and so does the middle folder's")
-        self.assertNotIn("c.jpg", after, "the folder actually unticked, as asked")
-        self.assertIn("a.jpg", after, "an untouched branch stays")
-
-    def photos(self, selected):
-        """The photos a selection would actually show."""
-        folders = [self.root/f.replace("/", "\\") for f in ss.PruneFolders(selected)]
-        return sorted(Path(p).name for p in
-                      ss.SlideShow.ScanImages([str(f) for f in folders if f.is_dir()]))
+    def test_the_show_reads_as_a_sentence(self):
+        self.assertEqual(self.editor(["Worldcons"]).SummaryText(), "Worldcons")
+        self.assertEqual(self.editor(["Fan Photos"], ["Fan Photos/LASFS"]).SummaryText(),
+                         "all of Fan Photos except LASFS")
+        self.assertEqual(self.editor().SummaryText(), "No folders chosen")
 
     def test_the_folders_offered_are_the_ones_on_disk(self):
         self.assertEqual([Path(f).name for f in self.editor().ChildFolders("Fan Photos")],

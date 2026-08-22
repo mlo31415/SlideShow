@@ -96,22 +96,40 @@ The shows you build are kept in `SlideShow shows.json` beside the settings
 file, and last from one run to the next:
 
 ```json
-{"version": 2, "shows": [
-   {"name": "Worldcons", "folders": ["Worldcons", "Fan Photos/LASFS"]}]}
+{"version": 3, "shows": [
+   {"name": "Fan Photos, mostly",
+    "folders": ["Fan Photos"],
+    "except": ["Fan Photos/LASFS/1941-1943"]}]}
 ```
 
-Folder paths are relative to the root directory and use `/` separators.  A
-folder that no longer exists is skipped, and a folder already covered by
-another in the same show is ignored, so no photo is ever shown twice.
+A show names the folders it takes and, if you like, folders to leave out of
+them again — each standing for itself and everything below it, with the most
+specific entry deciding.  So the show above means *all of Fan Photos except
+that one folder*.  Paths are relative to the root directory and use `/`
+separators; a folder that no longer exists is skipped, and an entry that
+changes nothing is dropped, so the file holds just what you actually said.
 
-The **Edit Photo Shows** dialog lists the shows on the left (New / Rename / Delete) and the
-whole folder tree on the right, with a check box on every folder at any level.
-Checking a folder takes it and everything below it, so checking a folder
-absorbs any of its descendants; unchecking one folder inside a checked one
-keeps the rest by checking the folders alongside it.  A running total of the
-folders and photos chosen is shown as you go, and folders which have since
-been deleted appear in gray so they can be cleared out.  **Save** keeps the
-changes; **Cancel** throws them away, asking first if anything was changed.
+The **Edit Photo Shows** dialog lists the shows on the left (New / Rename /
+Delete) and the whole folder tree on the right, with a check box on every
+folder at any level:
+
+* **Ticking** a folder takes it and everything below it.
+* **Unticking** a folder leaves out it and everything below it.
+* Neither touches the folder's parent or the folders alongside it, so
+  unticking one folder inside a ticked one leaves the rest of that folder —
+  including any photos sitting loose in it — in the show.
+* Ticking a folder again clears whatever was said about its contents, so
+  rules can never pile up out of sight.
+
+A box therefore says one thing only: whether that folder's photos are in the
+show.  Because a closed folder could still hide something, a row says so —
+*"Fan Photos   (1 folder left out)"* — and any branch with something chosen or
+left out inside it is opened for you when the show is loaded.  Under the tree,
+the show is written out in words (*"all of Fan Photos except LASFS/1941-1943"*)
+along with a running count of the folders and photos it comes to.  Folders
+which have since been deleted appear in gray so they can be cleared out.
+**Save** keeps the changes; **Cancel** throws them away, asking first if
+anything was changed.
 
 Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc**
 closes the Identify Photo panel when it is up, and otherwise exits.
