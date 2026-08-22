@@ -50,7 +50,8 @@ state.json"); if that monitor is gone, it opens on the main one instead.
 Buttons: Prev, Pause/Start Slideshow (one button, toggling with the state), Next,
 Add Info.  A top bar holds a ✕ close box in the upper-right corner (and has
 room for future menu items).
-Keyboard shortcuts: left/right arrows for Prev/Next, Esc to exit.
+Keyboard shortcuts: left/right arrows for Prev/Next; Esc closes the Identify
+Photo panel when it is up, and otherwise exits.
 Add Info splits the window in two the narrow way (left/right halves on a
 landscape screen, top/bottom on a portrait one), shoves the photo into one
 half, and shows the Identify Photo panel in the other: the faces found in the
@@ -483,7 +484,7 @@ class SlideShow(tk.Tk):
         self.bind_all("<Button>", self.OnUserInput)
         self.bind("<Left>", lambda e: self.OnArrowKey(False))
         self.bind("<Right>", lambda e: self.OnArrowKey(True))
-        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Escape>", lambda e: self.OnEscape())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
         # Let the window get its real size before displaying the first image
@@ -1286,6 +1287,17 @@ class SlideShow(tk.Tk):
             return
         self.PrevImage()
         self.ScheduleAdvance()
+
+    # Esc closes the Identify Photo panel when it is up -- it must not take the whole
+    # show down with somebody's half-finished identification in it -- and otherwise
+    # exits the show
+    def OnEscape(self) -> None:
+        if self.identifyPanel is not None:
+            self.CloseIdentifyPanel()   # Just as the panel's own Cancel button does
+            return
+        if self.dialogOpen:
+            return                      # Some other dialog is up; it can deal with the key
+        self.destroy()
 
     # The arrow keys drive Prev/Next, except while a name or comment is being typed,
     # where they belong to the text cursor.  (focus_get() is None when the application

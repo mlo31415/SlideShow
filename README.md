@@ -82,7 +82,8 @@ folders and photos chosen is shown as you go, and folders which have since
 been deleted appear in gray so they can be cleared out.  **Save** keeps the
 changes; **Cancel** throws them away, asking first if anything was changed.
 
-Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc** = exit.
+Keyboard shortcuts: **left arrow** = Prev, **right arrow** = Next, **Esc**
+closes the Identify Photo panel when it is up, and otherwise exits.
 
 ## Settings
 
