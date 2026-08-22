@@ -709,6 +709,9 @@ class SlideShow(tk.Tk):
         except Exception:
             pass                        # If the Windows API is unavailable we are at least fullscreen somewhere
         self.update_idletasks()
+        if self.identifyPanel is not None:
+            # This monitor may be a different shape, so the split has to be redone
+            self.FitFaceTable(self.PackIdentifyPanel())
         if len(self.history) > 0:
             self.ShowImage()            # Rescale to this monitor (also refits the header)
 
@@ -1344,6 +1347,44 @@ class SlideShow(tk.Tk):
         boxes.sort(key=lambda b: b[0])
         return boxes
 
+    # Put the Identify Photo panel and its separator on half the window, split the
+    # narrow way: left/right on a landscape window, top/bottom on a portrait one.  The
+    # window's own size is used, not the primary screen's, and this is re-done when the
+    # window is dropped on another monitor.  Returns the panel's usable height.
+    def PackIdentifyPanel(self) -> int:
+        panel=self.identifyPanel
+        width, height=self.winfo_width(), self.winfo_height()
+        landscape=width > height
+        side=tk.RIGHT if landscape else tk.BOTTOM
+        fill=tk.Y if landscape else tk.X
+        panel.pack_forget()
+        panel.separator.pack_forget()
+        panel.configure(width=max(width//2, 200), height=max(height//2, 200))
+        panel.pack(side=side, fill=fill, before=self.showFrame)
+        panel.separator.configure(width=2, height=2)
+        panel.separator.pack(side=side, fill=fill, before=self.showFrame)
+        self.update_idletasks()
+        return panel.winfo_height()     # Its real height: it starts below the title area
+
+    # Size the face table to the panel, leaving room for the boxes and buttons below it;
+    # when there is more table than room, add the scrollbar and mouse-wheel scrolling
+    def FitFaceTable(self, panelHeight: int) -> None:
+        panel=self.identifyPanel
+        self.update_idletasks()
+        tableWidth=panel.table.winfo_reqwidth()
+        tableHeight=panel.table.winfo_reqheight()
+        maxTableHeight=max(150, panelHeight-430)
+        panel.tableCanvas.configure(width=tableWidth, height=min(tableHeight, maxTableHeight),
+                                    scrollregion=(0, 0, tableWidth, tableHeight))
+        if tableHeight > maxTableHeight:
+            if not panel.tableScrollbar.winfo_ismapped():
+                panel.tableScrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            panel.tableCanvas.bind_all("<MouseWheel>",
+                                       lambda e: panel.tableCanvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+        else:
+            panel.tableScrollbar.pack_forget()
+            self.unbind_all("<MouseWheel>")
+
     # While the mouse is held down on a face in the Identify Photo list, ring that face
     # in green on the photo itself, so it is clear which person the row is about
     def HighlightFace(self, box: tuple[int, int, int, int]) -> None:
@@ -1410,29 +1451,11 @@ class SlideShow(tk.Tk):
         pfg=self.theme["fg"]
         pdim=self.theme["subdirFg"]
 
-        # Split using the window's own dimensions (not the primary screen's -- the
-        # window may have been dragged to a different-sized or rotated monitor)
         panel=tk.Frame(self, bg=pbg)
+        panel.pack_propagate(False)             # Hold the half-window size regardless of content
+        panel.separator=tk.Frame(self, bg=self.theme["separatorBg"])      # The thin band between the halves
         self.identifyPanel=panel
-        windowWidth=self.winfo_width()
-        windowHeight=self.winfo_height()
-        landscape=windowWidth > windowHeight
-        # A thin gray band separates the two halves
-        separator=tk.Frame(self, bg=self.theme["separatorBg"])
-        if landscape:
-            panel.configure(width=windowWidth//2)
-            panel.pack_propagate(False)         # Hold the half-window size regardless of content
-            panel.pack(side=tk.RIGHT, fill=tk.Y, before=self.showFrame)
-            separator.configure(width=2)
-            separator.pack(side=tk.RIGHT, fill=tk.Y, before=self.showFrame)
-        else:
-            panel.configure(height=windowHeight//2)
-            panel.pack_propagate(False)
-            panel.pack(side=tk.BOTTOM, fill=tk.X, before=self.showFrame)
-            separator.configure(height=2)
-            separator.pack(side=tk.BOTTOM, fill=tk.X, before=self.showFrame)
-        self.update_idletasks()
-        panelHeight=panel.winfo_height()        # The panel's real height (it starts below the title area)
+        panelHeight=self.PackIdentifyPanel()
         self.ShowImage()                # Rescale the photo into its reduced half
 
         tk.Label(panel, text="Identify Photo", font=("Segoe UI", 18, "bold"), fg=pfg, bg=pbg).pack(pady=(20, 5))
@@ -1479,17 +1502,9 @@ class SlideShow(tk.Tk):
                     w.bind("<Enter>", lambda e, box=box: self.HighlightFace(box))
                     w.bind("<Leave>", lambda e: self.ClearHighlight())
 
-        # Size the canvas to the table, capped to leave room for the comments box and
-        # buttons below; when capped, add the scrollbar and mouse-wheel scrolling
-        self.update_idletasks()
-        tableWidth=table.winfo_reqwidth()
-        tableHeight=table.winfo_reqheight()
-        maxTableHeight=max(150, panelHeight-430)
-        tableCanvas.configure(width=tableWidth, height=min(tableHeight, maxTableHeight),
-                              scrollregion=(0, 0, tableWidth, tableHeight))
-        if tableHeight > maxTableHeight:
-            tableScrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            tableCanvas.bind_all("<MouseWheel>", lambda e: tableCanvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+        # Kept so the panel can be re-split when the window moves to another monitor
+        panel.table, panel.tableCanvas, panel.tableScrollbar=table, tableCanvas, tableScrollbar
+        self.FitFaceTable(panelHeight)
 
         tk.Label(panel, text="", bg=pbg).pack()
         commentsLabel=tk.Label(panel, text="Other Comments and Corrections", font=("Segoe UI", 12), fg=pfg, bg=pbg)
@@ -1527,7 +1542,7 @@ class SlideShow(tk.Tk):
             self.unbind_all("<MouseWheel>")
             self.ClearHighlight()       # In case the panel is closed with a face still marked
             panel.destroy()
-            separator.destroy()
+            panel.separator.destroy()
             self.identifyPanel=None
             if not restore:
                 return                  # Moving to another photo; the panel is about to be rebuilt
