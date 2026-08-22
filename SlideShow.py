@@ -192,6 +192,15 @@ def PruneFolders(folders) -> list[str]:
     return sorted(kept, key=str.casefold)
 
 
+# The total padding a pack() pady or padx setting adds, given the several ways tk
+# reports one back: 4, "4", (4, 0), "4 0"
+def PadTotal(value) -> int:
+    if isinstance(value, (list, tuple)):
+        return sum(int(v) for v in value)
+    parts=str(value).replace("(", " ").replace(")", " ").replace(",", " ").split()
+    return sum(int(p) for p in parts if p.lstrip("-").isdigit())
+
+
 # The screen rectangle (left, top, right, bottom) of the monitor containing a point.
 # tk's screen dimensions describe only the primary monitor, so anything which has to
 # stay on the monitor the window is actually on must ask Windows.
@@ -1373,7 +1382,16 @@ class SlideShow(tk.Tk):
         self.update_idletasks()
         tableWidth=panel.table.winfo_reqwidth()
         tableHeight=panel.table.winfo_reqheight()
-        maxTableHeight=max(150, panelHeight-430)
+        # How much room the rest of the panel needs is measured rather than guessed, so
+        # that a change of font, of DPI, or to the panel's own contents cannot push the
+        # boxes and buttons below it off the bottom
+        reserve=8                       # A pixel or two in hand
+        for child in panel.winfo_children():
+            if child.winfo_manager() == "pack":
+                reserve+=PadTotal(child.pack_info().get("pady", 0))
+            if child is not panel.tableHolder:
+                reserve+=child.winfo_reqheight()
+        maxTableHeight=max(120, panelHeight-reserve)
         panel.tableCanvas.configure(width=tableWidth, height=min(tableHeight, maxTableHeight),
                                     scrollregion=(0, 0, tableWidth, tableHeight))
         if tableHeight > maxTableHeight:
@@ -1386,6 +1404,26 @@ class SlideShow(tk.Tk):
         else:
             panel.tableScrollbar.pack_forget()
             self.unbind_all("<MouseWheel>")
+
+        # Measuring requested heights gets it very close; this checks the result with
+        # everything actually in place and takes off any few pixels still hanging over
+        self.update_idletasks()
+
+        # The lowest point anything reaches, looking inside the rows too -- but not
+        # inside the table, whose own rows hang below it on purpose, to be scrolled to
+        def LowestPoint(widget) -> int:
+            lowest=widget.winfo_rooty()+widget.winfo_height()
+            for child in widget.winfo_children():
+                if child.winfo_ismapped():
+                    lowest=max(lowest, LowestPoint(child))
+            return lowest
+
+        panelBottom=panel.winfo_rooty()+panel.winfo_height()
+        lowest=max((LowestPoint(child) for child in panel.winfo_children()
+                    if child.winfo_ismapped() and child is not panel.tableHolder), default=panelBottom)
+        if lowest > panelBottom:
+            panel.tableCanvas.configure(height=max(60, panel.tableCanvas.winfo_height()-(lowest-panelBottom)))
+            self.update_idletasks()
 
     # Scroll the face table, but only while the pointer is over it: over the comments
     # box, the photo, or anywhere else, the wheel is left to whatever is under it
@@ -1524,7 +1562,7 @@ class SlideShow(tk.Tk):
                     w.bind("<Leave>", lambda e: self.ClearHighlight())
 
         # Kept so the panel can be re-split when the window moves to another monitor
-        panel.table, panel.tableCanvas, panel.tableScrollbar=table, tableCanvas, tableScrollbar
+        panel.table, panel.tableCanvas, panel.tableScrollbar, panel.tableHolder=table, tableCanvas, tableScrollbar, tableHolder
         self.FitFaceTable(panelHeight)
 
         tk.Label(panel, text="", bg=pbg).pack()
