@@ -18,7 +18,7 @@ wrong answer shows a visitor the wrong photographs.
 | File | Covers |
 |------|--------|
 | `test_settings.py` | Reading the settings file: the `Directories:` block, commented-out values, names matched without regard to case |
-| `test_photo_shows.py` | What a show stands for (overlapping and missing folders), the shows file and its v1→v2 tidying, finding the photos |
+| `test_photo_shows.py` | What a show stands for (overlapping and missing folders), the shows file and its tidying of older versions, finding the photos |
 | `test_folder_picking.py` | The check boxes in Edit Photo Shows: which folders a show comes to, ticking, unticking, and unticking *inside* a ticked folder |
 | `test_display_values.py` | Photo dates, the face-detection threshold, pack padding, the album line |
 
