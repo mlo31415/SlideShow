@@ -1461,6 +1461,14 @@ class SlideShow(tk.Tk):
         except Exception:
             img=None
         boxes=self.DetectFaces(img) if img is not None else None
+        # Why there are no faces to show matters: the photo would not open, face
+        # detection is not installed, or the photo simply has nobody in it
+        if img is None:
+            noFacesMessage="(This photo could not be read)"
+        elif boxes is None:
+            noFacesMessage="(Face detection is unavailable)"
+        else:
+            noFacesMessage="(No faces detected)"
 
         pbg=self.theme["panelBg"]
         pfg=self.theme["fg"]
@@ -1490,10 +1498,8 @@ class SlideShow(tk.Tk):
         panel.thumbnails=[]             # Keep references so tk doesn't garbage-collect the images
         nameEntries=[]
         inputVars=[]                    # Watched so the Cancel button can tell whether anything was entered
-        if boxes is None:
-            tk.Label(table, text="(Face detection is unavailable)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=3)
-        elif len(boxes) == 0:
-            tk.Label(table, text="(No faces detected)", font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=3)
+        if boxes is None or len(boxes) == 0:
+            tk.Label(table, text=noFacesMessage, font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=3)
         else:
             # Each row is numbered so a comment can refer to a face by its number
             for i, box in enumerate(boxes):
