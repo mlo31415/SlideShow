@@ -28,6 +28,7 @@ SlideShow Output *.json
 # directory here: the project itself is all top-level files.  (Should a real source
 # directory ever be added, exempt it with a "!/name/" line below.)
 /*/
+!/tests/
 
 # Photo shows (built by the show editor; per-installation)
 SlideShow shows.json
