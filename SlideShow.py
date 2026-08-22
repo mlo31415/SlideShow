@@ -72,7 +72,11 @@ file): concatenated pretty-printed JSON objects holding the save
 time, the photo's Piwigo id and file name (from its .xml companion), the
 album path, the editor's name or email, the numbered faces with names and
 detection boxes, the comment, and the photo date.  Load with
-json.JSONDecoder().raw_decode in a loop.
+json.JSONDecoder().raw_decode in a loop.  A face's "box" is [x, y, w, h] in
+pixels of the *original* photo (top-left origin, y downwards), as YuNet
+returns them, listed left-to-right; the round face pictures come from the
+circle centred on that box with a radius of 0.65 * its diagonal.  See the
+README for a worked example.
 
 The settings file is monitored while the show is running: saving a change to it
 applies just the changed parameters on the fly (a changed Directory restarts the

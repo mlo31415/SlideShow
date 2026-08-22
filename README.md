@@ -46,6 +46,37 @@ detection boxes, the comment, and the photo date.  Load with
 `json.JSONDecoder().raw_decode` in a loop.  The face rows in the panel are
 numbered #1, #2, … so a comment can refer to a face by its number.
 
+A record looks like this:
+
+```json
+{
+  "saved": "2026-08-20 16:04:55",
+  "photo id": 11725,
+  "file": "e-l00100.jpg",
+  "album": "Fan Photos/LASFS/1941-1943",
+  "editor": "mlo@baskerville.org",
+  "faces": [
+    {"number": 1, "name": "Sam Russell", "box": [412, 88, 60, 74]},
+    {"number": 2, "name": "", "box": [502, 95, 58, 70]}
+  ],
+  "comment": "The rear row, left to right.",
+  "photo date": "June 1942"
+}
+```
+
+**The face boxes.** `box` is `[x, y, w, h]` in **pixels of the original photo**
+— not of the photo as displayed, which is scaled to fit the screen.  `x` and
+`y` are the top-left corner, measured from the top-left of the photo with `x`
+increasing to the right and `y` downwards; `w` and `h` are the box's width and
+height.  These are the boxes OpenCV's YuNet detector returns, listed
+left-to-right by `x`, and `number` is the row's position in that order.
+
+A consumer wanting to show a face the way SlideShow does should draw a
+**circle**, not the box: centred on the box's centre, with a radius of
+`0.65 × √(w² + h²)` — 0.65 of the box's diagonal.  That is what the round
+thumbnails in the Identify Photo list are cut from, and what the green ring
+drawn over the photo follows.
+
 The show opens on the monitor it was on last time (remembered in `SlideShow
 state.json`); if that monitor is gone, it opens on the main one instead.
 Dragging the top bar moves the window to another monitor.
