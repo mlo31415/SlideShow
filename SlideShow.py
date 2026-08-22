@@ -1633,6 +1633,10 @@ class SlideShow(tk.Tk):
         commentsBox.bind("<<Modified>>", OnCommentsModified)
         UpdateCancelLabel()
 
+        # Ready to type without reaching for the mouse: the first name box, or the
+        # comments box when the photo has no faces to name
+        (nameEntries[0] if len(nameEntries) > 0 else commentsBox).focus_set()
+
 
 # The Edit Photo Shows dialog: the named shows on the left, and on the right the folder
 # tree with a check box on every folder.  A checked folder stands for itself and
