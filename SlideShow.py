@@ -1379,11 +1379,26 @@ class SlideShow(tk.Tk):
         if tableHeight > maxTableHeight:
             if not panel.tableScrollbar.winfo_ismapped():
                 panel.tableScrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            panel.tableCanvas.bind_all("<MouseWheel>",
-                                       lambda e: panel.tableCanvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+            # Windows sends the wheel to whatever has the focus rather than to whatever
+            # the pointer is over, so the binding has to be a global one which then works
+            # out for itself whether the pointer is over the face table
+            self.bind_all("<MouseWheel>", self.OnFaceTableWheel)
         else:
             panel.tableScrollbar.pack_forget()
             self.unbind_all("<MouseWheel>")
+
+    # Scroll the face table, but only while the pointer is over it: over the comments
+    # box, the photo, or anywhere else, the wheel is left to whatever is under it
+    def OnFaceTableWheel(self, event) -> None:
+        panel=self.identifyPanel
+        if panel is None:
+            return
+        canvas=panel.tableCanvas
+        # Is the pointer within the table's own rectangle?  (Its rows are widgets inside
+        # the canvas, so asking about the rectangle covers them too.)
+        if (canvas.winfo_rootx() <= event.x_root < canvas.winfo_rootx()+canvas.winfo_width()
+                and canvas.winfo_rooty() <= event.y_root < canvas.winfo_rooty()+canvas.winfo_height()):
+            canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
 
     # While the mouse is held down on a face in the Identify Photo list, ring that face
     # in green on the photo itself, so it is clear which person the row is about
