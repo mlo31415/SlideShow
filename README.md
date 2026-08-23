@@ -34,7 +34,12 @@ shows as just the year.
   while the user stays active (see *Email Timeout*).  Prev and Next stay live
   while the panel is up: they discard anything not yet saved, move to the next
   photo, and rebuild the panel for it; Pause and Add Info are disabled.  (Face
-  detection uses OpenCV's YuNet model, the .onnx file alongside the script.)
+  detection uses OpenCV's YuNet model, the .onnx file alongside the script.
+  Reading the photograph and finding the faces in it happen off the display's
+  own thread, so the panel appears at once — saying "Looking for faces…" —
+  and the rows arrive when they are ready.  Switching shows works the same
+  way: the photo on screen carries on until the new show's photos have been
+  found.)
 
 Each Save appends a record to this session's output log, `SlideShow Output
 <date and time of the latest save>.json` in the program's directory (a new

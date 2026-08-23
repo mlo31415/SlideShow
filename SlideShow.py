@@ -440,6 +440,8 @@ class SlideShow(tk.Tk):
         self.identifyPanel=None         # The Identify Photo panel, when it is up
         self.identifyWasPaused=False    # The pause state to return to when it closes
         self.CloseIdentifyPanel=None    # Closes the panel (set while it is up)
+        self.backgroundResults=queue.Queue()    # Answers from the working threads
+        self.switchingTo=None           # The show being looked for, while it is being looked for
 
         # Each run gets its own output log of Identify Photo saves, next to the settings
         # file; its name carries the date and time of the latest save.  It is created
@@ -613,6 +615,7 @@ class SlideShow(tk.Tk):
 
 
     def Start(self) -> None:
+        self.PollBackground()           # Pick up what the working threads have finished
         # Reappear on the monitor the show was on last time.  If that monitor is gone,
         # MonitorFromPoint answers with a different one, and the main monitor is used.
         if self.savedMonitor is not None:
@@ -782,6 +785,29 @@ class SlideShow(tk.Tk):
             self.FitFaceTable(self.PackIdentifyPanel())
         if len(self.history) > 0:
             self.ShowImage()            # Rescale to this monitor (also refits the header)
+
+    # -------------------- Work done off the screen's thread --------------------
+    # Reading a large photograph, looking for faces in it, and walking a big tree of
+    # folders all take long enough to stop the display dead if they are done where the
+    # screen is drawn.  They are handed to a thread instead -- which must touch no part
+    # of tk, since tkinter is not thread-safe: it leaves its answer in a queue, and this
+    # poll, which does run on the screen's thread, delivers it.
+    def InBackground(self, work, done) -> None:
+        def Run() -> None:
+            try:
+                self.backgroundResults.put((done, work(), None))
+            except Exception as e:
+                self.backgroundResults.put((done, None, e))
+        threading.Thread(target=Run, daemon=True).start()
+
+    def PollBackground(self) -> None:
+        try:
+            while True:
+                done, result, error=self.backgroundResults.get_nowait()
+                done(result, error)
+        except queue.Empty:
+            pass
+        self.after(120, self.PollBackground)
 
     # The monitor the window is on at the moment
     def CurrentMonitor(self) -> tuple[int, int, int, int]:
@@ -968,23 +994,37 @@ class SlideShow(tk.Tk):
         self.SaveState()
         super().destroy()
 
-    # A show was picked from the menu: display it
+    # A show was picked from the menu: find its photos without stopping the one on
+    # screen, and change over when they have been found
     def OnSelectShow(self) -> None:
         name=self.showVar.get()
-        if name == self.currentShowName:
+        if name == self.currentShowName or name == self.switchingTo:
             return
-        images=self.ImagesForShow(name)
-        if len(images) == 0:
-            self.showVar.set(self.currentShowName)      # Undo the pick
-            self.ShowMessage("Select Photo Show", f'"{name}" has no photos in it, so the show has not been changed.')
-            return
-        self.currentShowName=name
-        self.images=images
-        self.history=[]
-        self.histpos=-1
-        self.NextImage()
-        self.ScheduleAdvance()
-        self.SaveState()
+        self.switchingTo=name
+        # Say what is happening, but only if it takes long enough to be worth saying
+        self.after(400, lambda: self.subdirLabel.config(text=f"Finding the photos in {name}...")
+                   if self.switchingTo == name else None)
+
+        def Done(images, error) -> None:
+            if self.switchingTo != name:
+                return                  # Another show was picked while this one was being found
+            self.switchingTo=None
+            if error is not None or len(images) == 0:
+                self.showVar.set(self.currentShowName)      # Undo the pick
+                self.ShowImage()        # Take the "finding..." note off the album line
+                self.ShowMessage("Select Photo Show",
+                                 f'"{name}" has no photos in it, so the show has not been changed.'
+                                 if error is None else f'"{name}" could not be read:\n{error}')
+                return
+            self.currentShowName=name
+            self.images=images
+            self.history=[]
+            self.histpos=-1
+            self.NextImage()
+            self.ScheduleAdvance()
+            self.SaveState()
+
+        self.InBackground(lambda: self.ImagesForShow(name), Done)
 
     # Turn a Piwigo date ("1942-06-04 00:00:00") into something readable
     # ("June 4, 1942").  January 1st is Piwigo's way of saying that only the year is
@@ -1552,12 +1592,6 @@ class SlideShow(tk.Tk):
         self.photo=ImageTk.PhotoImage(self.displayedImage)
         self.imageLabel.config(image=self.photo)
 
-    # A round thumbnail of the face at box, for the Identify Photo table.  The picture
-    # itself comes from the shared FaceGeometry, so that it matches PhotosEditor's.
-    @staticmethod
-    def MakeFaceThumbnail(img: Image.Image, box: tuple[int, int, int, int], bg: str, size: int=72) -> ImageTk.PhotoImage:
-        return ImageTk.PhotoImage(RoundFaceThumbnail(img, box, bg, size))
-
     # Open the Identify Photo panel: the main window splits in two the narrow way
     # (left/right halves on a landscape screen, top/bottom halves on a portrait one),
     # the photo display is shoved into one half and the identification panel -- a table
@@ -1581,24 +1615,6 @@ class SlideShow(tk.Tk):
             b.config(state=tk.DISABLED)
 
         pathname=self.images[self.history[self.histpos]]
-        try:
-            img=Image.open(pathname).convert("RGB")
-        except Exception:
-            img=None
-        boxes=self.DetectFaces(img) if img is not None else None
-        # Why there are no faces to show matters: the shared geometry is missing, the
-        # photo would not open, face detection is not installed, or the photo simply has
-        # nobody in it
-        if RoundFaceThumbnail is None:
-            boxes=None                  # Without it the faces cannot be pictured
-            noFacesMessage="(FaceGeometry.py, shared with PhotosEditor, was not found)"
-        elif img is None:
-            noFacesMessage="(This photo could not be read)"
-        elif boxes is None:
-            noFacesMessage="(Face detection is unavailable)"
-        else:
-            noFacesMessage="(No faces detected)"
-
         pbg=self.theme["panelBg"]
         pfg=self.theme["fg"]
         pdim=self.theme["subdirFg"]
@@ -1627,34 +1643,79 @@ class SlideShow(tk.Tk):
         panel.thumbnails=[]             # Keep references so tk doesn't garbage-collect the images
         nameEntries=[]
         inputVars=[]                    # Watched so the Cancel button can tell whether anything was entered
-        if boxes is None or len(boxes) == 0:
-            tk.Label(table, text=noFacesMessage, font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=3)
-        else:
-            # Each row is numbered so a comment can refer to a face by its number
-            for i, box in enumerate(boxes):
-                thumb=self.MakeFaceThumbnail(img, box, pbg)
-                panel.thumbnails.append(thumb)
-                numberLabel=tk.Label(table, text=f"#{i+1}", font=("Segoe UI", 12), fg=pfg, bg=pbg)
-                numberLabel.grid(row=i+1, column=0, padx=(0, 8), sticky="e")
-                faceLabel=tk.Label(table, image=thumb, bg=pbg)
-                faceLabel.grid(row=i+1, column=1, padx=(0, 12), pady=4)
-                var=tk.StringVar()
-                inputVars.append(var)
-                entry=tk.Entry(table, font=("Segoe UI", 12), width=32, textvariable=var)
-                entry.grid(row=i+1, column=2, sticky="w")
-                nameEntries.append(entry)
-                for w in (numberLabel, faceLabel, entry):
-                    ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
-                               "You do not need to fill in any rows except ones you have data for.  "
-                               "Point at the face to see who it is in the photo.")
-                # Pointing at a row marks that face on the photo
-                for w in (numberLabel, faceLabel, entry):
-                    w.bind("<Enter>", lambda e, box=box: self.HighlightFace(box))
-                    w.bind("<Leave>", lambda e: self.ClearHighlight())
+        panel.boxes=[]                  # The faces, once they have been looked for
+        # Reading the photograph and looking for faces in it is the slow part, and the
+        # panel must not sit there unbuilt while it happens: it is put up at once,
+        # saying so, and the rows are added when the thread comes back.
+        working=tk.Label(table, text="Looking for faces...", font=("Segoe UI", 11), fg=pdim, bg=pbg)
+        working.grid(row=1, column=0, columnspan=3)
 
         # Kept so the panel can be re-split when the window moves to another monitor
         panel.table, panel.tableCanvas, panel.tableScrollbar, panel.tableHolder=table, tableCanvas, tableScrollbar, tableHolder
         self.FitFaceTable(panelHeight)
+
+        # In the thread: read the photograph, find the faces, and cut the round pictures
+        # (all of it PIL, none of it tk).  Turning those into tk images, and building the
+        # rows, happens below on the screen's thread.
+        def FindFaces():
+            try:
+                img=Image.open(pathname).convert("RGB")
+            except Exception:
+                return None, None, []
+            boxes=self.DetectFaces(img)
+            if boxes is None or RoundFaceThumbnail is None:
+                return img, None, []
+            return img, boxes, [RoundFaceThumbnail(img, box, pbg) for box in boxes]
+
+        def AddFaceRows(found, error) -> None:
+            if self.identifyPanel is not panel or not table.winfo_exists():
+                return                  # The panel has been closed, or moved on to another photo
+            img, boxes, pictures=found if error is None else (None, None, [])
+            working.destroy()
+            # Why there are no faces to show matters: the shared geometry is missing, the
+            # photo would not open, face detection is not installed, or the photo simply
+            # has nobody in it
+            if RoundFaceThumbnail is None:
+                message="(FaceGeometry.py, shared with PhotosEditor, was not found)"
+            elif error is not None:
+                message=f"(This photo could not be read: {error})"
+            elif img is None:
+                message="(This photo could not be read)"
+            elif boxes is None:
+                message="(Face detection is unavailable)"
+            else:
+                message="(No faces detected)"
+
+            if boxes is None or len(boxes) == 0:
+                tk.Label(table, text=message, font=("Segoe UI", 11), fg=pdim, bg=pbg).grid(row=1, column=0, columnspan=3)
+            else:
+                panel.boxes=list(boxes)
+                # Each row is numbered so a comment can refer to a face by its number
+                for i, (box, picture) in enumerate(zip(boxes, pictures)):
+                    thumb=ImageTk.PhotoImage(picture)
+                    panel.thumbnails.append(thumb)
+                    numberLabel=tk.Label(table, text=f"#{i+1}", font=("Segoe UI", 12), fg=pfg, bg=pbg)
+                    numberLabel.grid(row=i+1, column=0, padx=(0, 8), sticky="e")
+                    faceLabel=tk.Label(table, image=thumb, bg=pbg)
+                    faceLabel.grid(row=i+1, column=1, padx=(0, 12), pady=4)
+                    var=tk.StringVar()
+                    inputVars.append(var)
+                    var.trace_add("write", UpdateCancelLabel)
+                    entry=tk.Entry(table, font=("Segoe UI", 12), width=32, textvariable=var)
+                    entry.grid(row=i+1, column=2, sticky="w")
+                    nameEntries.append(entry)
+                    for w in (numberLabel, faceLabel, entry):
+                        ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
+                                   "You do not need to fill in any rows except ones you have data for.  "
+                                   "Point at the face to see who it is in the photo.")
+                    # Pointing at a row marks that face on the photo
+                    for w in (numberLabel, faceLabel, entry):
+                        w.bind("<Enter>", lambda e, box=box: self.HighlightFace(box))
+                        w.bind("<Leave>", lambda e: self.ClearHighlight())
+                if len(commentsBox.get("1.0", tk.END).strip()) == 0:
+                    nameEntries[0].focus_set()      # Ready to type -- unless a comment is already being written
+
+            self.FitFaceTable(panel.winfo_height())
 
         tk.Label(panel, text="", bg=pbg).pack()
         commentsLabel=tk.Label(panel, text="Other Comments and Corrections", font=("Segoe UI", 12), fg=pfg, bg=pbg)
@@ -1731,7 +1792,7 @@ class SlideShow(tk.Tk):
                 "file":       photoFile,
                 "album":      album,
                 "editor":     self.editorEmail,
-                "faces":      [{"number": i+1, "name": e.get().strip(), "box": list(box)} for i, (e, box) in enumerate(zip(nameEntries, boxes or []))],
+                "faces":      [{"number": i+1, "name": e.get().strip(), "box": list(box)} for i, (e, box) in enumerate(zip(nameEntries, panel.boxes))],
                 "comment":    commentsBox.get("1.0", tk.END).strip(),
                 "photo date": dateEntry.get().strip(),
             })
@@ -1764,7 +1825,9 @@ class SlideShow(tk.Tk):
 
         # Ready to type without reaching for the mouse: the first name box, or the
         # comments box when the photo has no faces to name
-        (nameEntries[0] if len(nameEntries) > 0 else commentsBox).focus_set()
+        commentsBox.focus_set()         # Until the faces arrive, which take the focus then
+
+        self.InBackground(FindFaces, AddFaceRows)
 
 
 # The Edit Photo Shows dialog: the named shows on the left, and on the right the folder
