@@ -106,6 +106,18 @@ from tkinter import font as tkfont
 
 from PIL import Image, ImageDraw, ImageTk
 
+# How a face is shown -- the circle the round pictures are cut from and the rings are
+# drawn on -- is shared with PhotosEditor, so that the two cannot drift apart.  It lives
+# in HelpersPackage, either linked into this directory ("mklinks FaceGeometry Only.bat")
+# or found as a sibling of it.
+_HELPERS=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "HelpersPackage")
+if os.path.isdir(_HELPERS) and _HELPERS not in sys.path:
+    sys.path.append(_HELPERS)
+try:
+    from FaceGeometry import FaceCircleBounds, RoundFaceThumbnail
+except ImportError:
+    FaceCircleBounds=RoundFaceThumbnail=None       # Reported when a photo is identified
+
 SETTINGS_FILE="SlideShow settings.txt"
 STATE_FILE="SlideShow state.json"
 SHOWS_FILE="SlideShow shows.json"
@@ -1526,12 +1538,11 @@ class SlideShow(tk.Tk):
     def HighlightFace(self, box: tuple[int, int, int, int]) -> None:
         if getattr(self, "displayedImage", None) is None:
             return
-        x, y, w, h=box
-        scale=self.displayScale
-        cx, cy=(x+w/2)*scale, (y+h/2)*scale
-        r=0.65*((w*scale)**2+(h*scale)**2)**0.5     # The circle the row's thumbnail was cut from
+        # The circle the row's thumbnail was cut from, scaled to the photo as displayed
+        left, top, right, bottom=(v*self.displayScale for v in FaceCircleBounds(box))
         marked=self.displayedImage.copy()
-        ImageDraw.Draw(marked).ellipse((cx-r, cy-r, cx+r, cy+r), outline="#00FF40", width=max(2, int(r/12)))
+        ImageDraw.Draw(marked).ellipse((left, top, right, bottom), outline="#00FF40",
+                                       width=max(2, int((right-left)/24)))
         self.photo=ImageTk.PhotoImage(marked)
         self.imageLabel.config(image=self.photo)
 
@@ -1541,18 +1552,11 @@ class SlideShow(tk.Tk):
         self.photo=ImageTk.PhotoImage(self.displayedImage)
         self.imageLabel.config(image=self.photo)
 
-    # A round thumbnail of the face at box, for the Identify Photo table
+    # A round thumbnail of the face at box, for the Identify Photo table.  The picture
+    # itself comes from the shared FaceGeometry, so that it matches PhotosEditor's.
     @staticmethod
     def MakeFaceThumbnail(img: Image.Image, box: tuple[int, int, int, int], bg: str, size: int=72) -> ImageTk.PhotoImage:
-        x, y, w, h=box
-        cx, cy=x+w/2, y+h/2
-        r=0.65*(w*w+h*h)**0.5
-        square=img.crop((max(int(cx-r), 0), max(int(cy-r), 0), min(int(cx+r), img.width), min(int(cy+r), img.height))).resize((size, size), Image.LANCZOS)
-        mask=Image.new("L", (size, size), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, size-1, size-1), fill=255)
-        thumb=Image.new("RGB", (size, size), bg)
-        thumb.paste(square, (0, 0), mask)
-        return ImageTk.PhotoImage(thumb)
+        return ImageTk.PhotoImage(RoundFaceThumbnail(img, box, bg, size))
 
     # Open the Identify Photo panel: the main window splits in two the narrow way
     # (left/right halves on a landscape screen, top/bottom halves on a portrait one),
@@ -1582,9 +1586,13 @@ class SlideShow(tk.Tk):
         except Exception:
             img=None
         boxes=self.DetectFaces(img) if img is not None else None
-        # Why there are no faces to show matters: the photo would not open, face
-        # detection is not installed, or the photo simply has nobody in it
-        if img is None:
+        # Why there are no faces to show matters: the shared geometry is missing, the
+        # photo would not open, face detection is not installed, or the photo simply has
+        # nobody in it
+        if RoundFaceThumbnail is None:
+            boxes=None                  # Without it the faces cannot be pictured
+            noFacesMessage="(FaceGeometry.py, shared with PhotosEditor, was not found)"
+        elif img is None:
             noFacesMessage="(This photo could not be read)"
         elif boxes is None:
             noFacesMessage="(Face detection is unavailable)"
