@@ -110,7 +110,27 @@ from PIL import Image, ImageDraw, ImageTk
 # drawn on -- is shared with PhotosEditor, so that the two cannot drift apart.  It lives
 # in HelpersPackage, either linked into this directory ("mklinks FaceGeometry Only.bat")
 # or found as a sibling of it.
-_HELPERS=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "HelpersPackage")
+# Where the program's own directory is.  PyInstaller unpacks a frozen program into a
+# temporary folder and points __file__ at that, so everything the *user* keeps -- the
+# settings, the shows, the state, the output logs -- must be looked for beside the
+# executable instead, or the program would read a settings file nobody can edit and
+# write its logs where they are thrown away.
+def ProgramDirectory() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+# Where a file shipped *with* the program is: inside PyInstaller's unpacked folder when
+# it was built in, and beside the program when it was not.  Either way it is found.
+def BundledFile(name: str) -> str:
+    unpacked=getattr(sys, "_MEIPASS", "")
+    if len(unpacked) > 0 and os.path.exists(os.path.join(unpacked, name)):
+        return os.path.join(unpacked, name)
+    return os.path.join(ProgramDirectory(), name)
+
+
+_HELPERS=os.path.join(os.path.dirname(ProgramDirectory()), "HelpersPackage")
 if os.path.isdir(_HELPERS) and _HELPERS not in sys.path:
     sys.path.append(_HELPERS)
 try:
@@ -345,7 +365,7 @@ class SlideShow(tk.Tk):
         super().__init__()
 
         # -------------------- Settings --------------------
-        settingsPath=os.path.join(os.path.dirname(os.path.abspath(__file__)), SETTINGS_FILE)
+        settingsPath=os.path.join(ProgramDirectory(), SETTINGS_FILE)
         settings=ReadSettings(settingsPath)
         if settings is None:
             self.Fatal(f"Settings file '{settingsPath}' is missing.")
@@ -404,7 +424,7 @@ class SlideShow(tk.Tk):
         self.tlds=self.FindTLDs(self.rootDirectory)
         if len(self.tlds) == 0:
             self.Fatal(f"No directories found inside '{self.rootDirectory}' -- there are no photo shows to display.")
-        programDirectory=os.path.dirname(os.path.abspath(__file__))
+        programDirectory=ProgramDirectory()
         self.statePath=os.path.join(programDirectory, STATE_FILE)
         self.showsPath=os.path.join(programDirectory, SHOWS_FILE)
         self.shows=self.LoadShows()
@@ -454,7 +474,7 @@ class SlideShow(tk.Tk):
         self.title("SlideShow")
         # Taskbar icon (bundled into the exe via the .spec if frozen); harmless no-op if missing or bad
         try:
-            self.iconbitmap(os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "SlideShow.ico"))
+            self.iconbitmap(BundledFile("SlideShow.ico"))
         except Exception:
             pass
         self.configure(bg="black")
@@ -954,7 +974,7 @@ class SlideShow(tk.Tk):
     # carries the date and time of this latest save.
     def LogSave(self, record: dict) -> None:
         if self.outputPath is None:         # This session's first save creates the file
-            self.outputPath=os.path.join(os.path.dirname(os.path.abspath(__file__)),
+            self.outputPath=os.path.join(ProgramDirectory(),
                                          f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
         text=json.dumps(record, indent=2, ensure_ascii=False)
         # Compact the four-number face boxes back onto one line for readability
@@ -1473,7 +1493,7 @@ class SlideShow(tk.Tk):
             cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
         except AttributeError:
             pass
-        modelPath=os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), FACE_MODEL)
+        modelPath=BundledFile(FACE_MODEL)
         if not os.path.exists(modelPath):
             return None
         # Detect on a downscaled copy for speed, then scale the boxes back up
