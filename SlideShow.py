@@ -154,6 +154,8 @@ CREDIT_FONT_SMALLER=6           # The credit line under the caption is this much
 MIN_CREDIT_FONT_SIZE=9
 MONTHS=["January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"]
+BUTTON_PAD_TOP=5                # Space above the button row...
+BUTTON_PAD_BOTTOM=15            # ...and below it, on a landscape screen (a portrait one lifts it further)
 SUBDIR_FONT_SIZE=28             # Normal album-line size; on a landscape single line it shrinks...
 MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then wraps below it
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
@@ -524,7 +526,7 @@ class SlideShow(tk.Tk):
         # Bottom-up within the slideshow section: buttons at the very bottom,
         # description just above them, image fills the rest.
         buttonFrame=self.buttonFrame=tk.Frame(self.showFrame, bg="black")
-        buttonFrame.pack(side=tk.BOTTOM, pady=(5, 15))
+        buttonFrame.pack(side=tk.BOTTOM, pady=(BUTTON_PAD_TOP, BUTTON_PAD_BOTTOM))
 
         # Every button carries an image (a transparent spacer when it has no icon) so
         # that they all size and align identically
@@ -544,6 +546,13 @@ class SlideShow(tk.Tk):
         # Bigger and bold, to stand out from its neighbors
         self.addInfoButton.configure(width=191, height=38, font=("Segoe UI", 12, "bold"))
         ToolTip(self.addInfoButton, "If you have anything to tell us about this photo, click here.")
+
+        # The row is re-sized for the shape of whatever monitor the window is on (see
+        # FitButtonRow).  Each button's own padding is kept, since they are not all alike:
+        # Add Info is deliberately bigger than its neighbors.
+        self.buttons=(self.prevButton, self.pauseButton, self.nextButton, self.addInfoButton)
+        self.buttonBasePady={b: int(str(b.cget("pady"))) for b in self.buttons}     # cget answers with a Tcl object
+        self.buttonNaturalHeight={}     # Measured the first time the row is fitted
 
         # The image and its caption are stacked in a frame which is centered in the
         # remaining space, so the caption sits directly below the image and moves with it.
@@ -651,6 +660,7 @@ class SlideShow(tk.Tk):
             if MonitorRect(center[0], center[1], self) != rect:
                 rect=MonitorRect(0, 0, self)        # The main monitor: it always starts at the origin
             self.PlaceOnMonitor(rect)
+        self.FitButtonRow()             # Also when there was no remembered monitor to place it on
         self.NextImage()
         self.ScheduleAdvance()
         self.OnTick()
@@ -807,6 +817,7 @@ class SlideShow(tk.Tk):
         except Exception:
             pass                        # If the Windows API is unavailable we are at least fullscreen somewhere
         self.update_idletasks()
+        self.FitButtonRow()             # This monitor may be portrait where the last was landscape
         if self.identifyPanel is not None:
             # This monitor may be a different shape, so the split has to be redone
             self.FitFaceTable(self.PackIdentifyPanel())
@@ -1420,6 +1431,28 @@ class SlideShow(tk.Tk):
             self.pauseButton.config(text=" Start Slideshow", image=self.buttonIcons["play"])
         else:
             self.pauseButton.config(text=" Pause", image=self.buttonIcons["pause"])
+
+    # The button row is sized for the shape of the monitor the window is on.  A portrait
+    # screen is the one people walk up to and touch, and it has vertical room to spare, so
+    # there the buttons are half again as tall and the row sits half a button clear of the
+    # bottom edge instead of hard against it.  Called when the show starts and again
+    # whenever the window is dropped on another monitor, which need not be the same shape.
+    def FitButtonRow(self) -> None:
+        self.update_idletasks()                     # So a button just built reports its real height
+        left, top, right, bottom=self.CurrentMonitor()
+        portrait=(bottom-top) > (right-left)
+        tallest=0
+        for b in self.buttons:
+            if b not in self.buttonNaturalHeight:
+                self.buttonNaturalHeight[b]=b.winfo_reqheight()      # Its height at its own padding
+            natural=self.buttonNaturalHeight[b]
+            # pady is added at the top and at the bottom, so a quarter of the height at
+            # each edge makes the button half again as tall
+            extra=natural//4 if portrait else 0
+            b.config(pady=self.buttonBasePady[b]+extra)
+            tallest=max(tallest, natural+2*extra)   # As it now stands, not as it was built
+        lift=tallest//2 if portrait else 0
+        self.buttonFrame.pack_configure(pady=(BUTTON_PAD_TOP, BUTTON_PAD_BOTTOM+lift))
 
     def OnPauseContinue(self) -> None:
         if self.dialogOpen:
