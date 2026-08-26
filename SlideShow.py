@@ -554,6 +554,13 @@ class SlideShow(tk.Tk):
 
         self.imageLabel=tk.Label(innerFrame, bg="black")
         self.imageLabel.pack(side=tk.TOP)
+        # Touching or clicking the photo does what the Pause/Start Slideshow button does:
+        # it stops a running show and starts a paused one.  On a touch screen that is the
+        # obvious gesture, and it is the only control a visitor can find without being
+        # told.  Going through OnPauseContinue means it obeys the same rule as the button
+        # about the Identify Photo panel -- while somebody is identifying faces the show
+        # stays paused, and touching the photo will not start it running under them.
+        self.imageLabel.bind("<Button-1>", lambda e: self.OnPauseContinue())
 
         self.captionFont=tkfont.Font(family="Segoe UI", size=CAPTION_FONT_SIZE)
         self.descLabel=tk.Label(innerFrame, text="", font=self.captionFont, fg="white", bg="black",
