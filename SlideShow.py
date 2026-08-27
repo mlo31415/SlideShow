@@ -1988,6 +1988,16 @@ class SlideShow(tk.Tk):
         emailLabel.pack(side=tk.LEFT, padx=(0, 8))
         emailVar=tk.StringVar(value=self.editorEmail)       # Prefilled from the last save, while it is remembered
         prefilledEmail=self.editorEmail                     # What it holds before anybody touches it
+
+        # Is there anything on this panel worth keeping?  Asked in three places: to tint
+        # the boxes, to light up Save, and to decide whether moving to another photo has
+        # to stop and ask.  The address box does not count while it still holds what was
+        # filled in from the last save, or leaving a photo nobody had typed a word about
+        # would ask, and Save would sit lit from the moment the panel opened.
+        def HasInput() -> bool:
+            return (any(len(v.get().strip()) > 0 for v in inputVars)
+                    or len(commentsBox.get("1.0", tk.END).strip()) > 0
+                    or emailVar.get().strip() != prefilledEmail)
         emailEntry=tk.Entry(emailRow, font=("Segoe UI", ENTRY_FONT_SIZE), width=30, textvariable=emailVar)
         emailEntry.pack(side=tk.LEFT)
         tinted.append((emailEntry, lambda: len(emailVar.get().strip()) > 0))
@@ -2068,17 +2078,14 @@ class SlideShow(tk.Tk):
             WriteRecord()
             Close()
 
-        # Is there anything here worth keeping?  The address box does not count while it
-        # still holds what was filled in from the last save: otherwise leaving a photo
-        # nobody had typed a word about would stop and ask.
         panel.WriteRecord=WriteRecord
-        panel.HasInput=lambda: (any(len(v.get().strip()) > 0 for v in inputVars)
-                                or len(commentsBox.get("1.0", tk.END).strip()) > 0
-                                or emailVar.get().strip() != prefilledEmail)
+        panel.HasInput=HasInput
 
         buttons=tk.Frame(panel, bg=pbg)
         buttons.pack(pady=15)
-        tk.Button(buttons, text="Save", font=("Segoe UI", PANEL_BUTTON_FONT_SIZE), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
+        saveButton=tk.Button(buttons, text="Save", font=("Segoe UI", PANEL_BUTTON_FONT_SIZE), width=9, command=OnSave)
+        saveButton.pack(side=tk.LEFT, padx=8)
+        plainSaveBg=str(saveButton.cget("bg"))      # cget answers with a Tcl object
         cancelButton=tk.Button(buttons, text="Cancel", font=("Segoe UI", PANEL_BUTTON_FONT_SIZE), width=9, command=Close)
         cancelButton.pack(side=tk.LEFT, padx=8)
 
@@ -2090,6 +2097,13 @@ class SlideShow(tk.Tk):
         def TintBoxes(*args) -> None:
             for box, hasContent in tinted:
                 box.config(bg=FILLED_BOX_BG if hasContent() else EMPTY_BOX_BG)
+            # Save lights up in the same yellow the filled boxes use, so "there is
+            # something here" and "this is the button for it" are one signal.  Nothing
+            # typed and it is an ordinary button again.  Only the colour changes: bold
+            # would widen it by 9px and shove Cancel sideways as soon as anyone typed.
+            entered=HasInput()
+            saveButton.config(bg=FILLED_BOX_BG if entered else plainSaveBg,
+                              activebackground=FILLED_BOX_BG if entered else plainSaveBg)
 
         for var in inputVars+[emailVar]:
             var.trace_add("write", TintBoxes)
