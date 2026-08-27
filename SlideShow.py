@@ -1831,6 +1831,8 @@ class SlideShow(tk.Tk):
 
                     entry.bind("<FocusIn>", OnRowFocus)
                     entry.bind("<FocusOut>", OnRowUnfocus)
+                    entry.bind("<Return>", NextBox)         # Down to the next box, and round at the end
+                    entry.bind("<KP_Enter>", NextBox)
                     for w in (numberLabel, faceLabel, entry):
                         ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
                                    "You do not need to fill in any rows except ones you have data for.  "
@@ -1879,6 +1881,26 @@ class SlideShow(tk.Tk):
         emailEntry=tk.Entry(emailRow, font=("Segoe UI", 12), width=30, textvariable=emailVar)
         emailEntry.pack(side=tk.LEFT)
         tinted.append((emailEntry, lambda: len(emailVar.get().strip()) > 0))
+
+        # Enter steps down to the next box and round from the last back to the first, so a
+        # whole photograph can be named from the keyboard without reaching for the mouse.
+        # The order is the order down the panel: the faces, then the date, then who is
+        # telling us.  The comments box is deliberately not in the ring -- Enter there
+        # starts a new line, which is what somebody writing several sentences expects.
+        # The list is rebuilt on each press because the face rows do not exist until the
+        # thread has finished looking for faces.
+        def NextBox(event) -> str:
+            boxes=nameEntries+[dateEntry, emailEntry]
+            try:
+                here=boxes.index(event.widget)
+            except ValueError:
+                return "break"          # Not one of ours; leave the cursor where it is
+            boxes[(here+1) % len(boxes)].focus_set()
+            return "break"
+
+        for w in (dateEntry, emailEntry):
+            w.bind("<Return>", NextBox)
+            w.bind("<KP_Enter>", NextBox)       # The keypad's Enter is the same key to a typist
         for w in (emailLabel, emailEntry):
             ToolTip(w, "Please let us know who is submitting this information, so we can give you credit.")
 
