@@ -30,6 +30,10 @@ The directory to be displayed and the other operating parameters are read from
     Face Detection        How sure the detector must be before it calls something a
       Threshold           face, 0 to 1: lower finds more faces, including doubtful
                           ones; higher finds only clear ones  (default: 0.6)
+    Maximum               How far a photo smaller than the screen may be enlarged to
+      Enlargement         fill it, as a multiple of its own size.  1 leaves such a
+                          photo at its own size, as it always used to be; beyond
+                          about 2 an old scan starts to look soft  (default: 2)
 
 A parameter value whose first non-blank character is '#' is treated as empty,
 and the parameter's default is used.
@@ -160,7 +164,8 @@ SUBDIR_FONT_SIZE=28             # Normal album-line size; on a landscape single 
 MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then wraps below it
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
-KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold"}
+DEFAULT_MAX_ENLARGEMENT=2.0     # How far a photo smaller than the screen may be blown up to fill it
+KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold", "maximum enlargement"}
 
 # The color schemes for the Mode parameter (default: dark)
 THEMES={
@@ -408,6 +413,7 @@ class SlideShow(tk.Tk):
             self.emailTimeout=60.0
         self.editorEmail=""             # Remembered between saves while the user stays active
         self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
+        self.maxEnlargement=self.ResolveMaxEnlargement(Get("Maximum Enlargement", ""))
 
         if len(self.rootDirectories) == 0:
             self.Fatal(f"No directory path is defined in '{settingsPath}'.\n\nThe settings file needs a 'Directories:' line followed by the path of the directory holding the photo shows.")
@@ -707,6 +713,14 @@ class SlideShow(tk.Tk):
             except ValueError:
                 problems.append(f"Face Detection Threshold='{value}' should be a number  (using {DEFAULT_FACE_THRESHOLD})")
 
+        if "maximum enlargement" in settings:
+            value=settings["maximum enlargement"]
+            try:
+                if float(value) < 1:
+                    problems.append(f"Maximum Enlargement='{value}' should be 1 or more  (using {DEFAULT_MAX_ENLARGEMENT})")
+            except ValueError:
+                problems.append(f"Maximum Enlargement='{value}' should be a number  (using {DEFAULT_MAX_ENLARGEMENT})")
+
         fontName=settings.get("title font", "").strip()
         if len(fontName) > 0 and self.FindFontFamily(fontName) is None:
             problems.append(f"Title Font='{fontName}' is not an installed font  (using {DEFAULT_TITLE_FONT})")
@@ -736,6 +750,18 @@ class SlideShow(tk.Tk):
     def ShowSettingsProblems(self, problems: list[str]) -> None:
         self.ShowMessage("SlideShow settings", "Problems in the settings file:\n\n"+"\n".join(problems), warning=True)
 
+
+    # Turn the "Maximum Enlargement" parameter value into a usable limit (1 or more),
+    # falling back to the default for a missing or unusable value
+    @staticmethod
+    def ResolveMaxEnlargement(value: str) -> float:
+        try:
+            limit=float(value)
+        except ValueError:
+            return DEFAULT_MAX_ENLARGEMENT
+        if limit < 1:               # Below its own size is not enlargement; 1 means "leave it alone"
+            return DEFAULT_MAX_ENLARGEMENT
+        return limit
 
     # Turn the "Face Detection Threshold" parameter value into a usable confidence
     # (0 < t <= 1), falling back to the default for a missing or unusable value
@@ -1226,7 +1252,14 @@ class SlideShow(tk.Tk):
             if width < 50 or height < 50:       # Not laid out yet -- fall back to a guess
                 width=self.winfo_screenwidth()-40
                 height=self.winfo_screenheight()-300
-            img.thumbnail((width, height), Image.LANCZOS)
+            # Fit it to the space.  A photo bigger than the space is reduced to it; one
+            # smaller is enlarged to fill it, but only up to Maximum Enlargement, since
+            # past about twice its own size an old scan turns soft and blocky.  (This is
+            # deliberately not Image.thumbnail, which only ever reduces -- it left a small
+            # scan sitting at its own size in the middle of a large screen.)
+            scale=min(width/img.width, height/img.height, self.maxEnlargement)
+            if scale != 1.0:
+                img=img.resize((max(1, round(img.width*scale)), max(1, round(img.height*scale))), Image.LANCZOS)
             # Kept so that a face can be marked on the photo while it is being identified
             self.displayedImage=img.convert("RGB")
             self.displayScale=img.width/fullWidth if fullWidth > 0 else 1.0
@@ -1337,6 +1370,7 @@ class SlideShow(tk.Tk):
             self.emailTimeout=emailTimeout
 
         self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
+        self.maxEnlargement=self.ResolveMaxEnlargement(Get("Maximum Enlargement", ""))
 
         mode=Get("Mode", "Dark").casefold()
         if mode in THEMES and THEMES[mode] is not self.theme:

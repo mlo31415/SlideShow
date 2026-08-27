@@ -108,3 +108,30 @@ class DirectoriesBlock(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MaximumEnlargement(unittest.TestCase):
+    """How far a photo smaller than the screen may be blown up to fill it.
+    PIL's thumbnail() only ever reduces, so before this parameter existed a
+    small scan sat at its own size in the middle of a large display.
+    """
+
+    def test_a_plain_number_is_taken_as_given(self):
+        self.assertEqual(ss.SlideShow.ResolveMaxEnlargement("1.5"), 1.5)
+        self.assertEqual(ss.SlideShow.ResolveMaxEnlargement("3"), 3.0)
+
+    def test_one_means_leave_small_photos_alone(self):
+        """The escape hatch back to how it always used to behave."""
+        self.assertEqual(ss.SlideShow.ResolveMaxEnlargement("1"), 1.0)
+
+    def test_less_than_one_would_shrink_a_photo_that_already_fits(self):
+        self.assertEqual(ss.SlideShow.ResolveMaxEnlargement("0.5"), ss.DEFAULT_MAX_ENLARGEMENT)
+        self.assertEqual(ss.SlideShow.ResolveMaxEnlargement("-2"), ss.DEFAULT_MAX_ENLARGEMENT)
+
+    def test_nonsense_and_absence_fall_back_to_the_default(self):
+        self.assertEqual(ss.SlideShow.ResolveMaxEnlargement("large"), ss.DEFAULT_MAX_ENLARGEMENT)
+        self.assertEqual(ss.SlideShow.ResolveMaxEnlargement(""), ss.DEFAULT_MAX_ENLARGEMENT)
+
+    def test_it_is_a_known_parameter(self):
+        """Or every settings file using it would be reported as a mistake."""
+        self.assertIn("maximum enlargement", ss.KNOWN_PARAMETERS)
