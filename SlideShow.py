@@ -179,12 +179,17 @@ KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font",
 
 # The color schemes for the Mode parameter (default: dark)
 THEMES={
+    # scrollThumb is the block showing how much of the face table is on screen, and it is
+    # deliberately darker than the trough it slides in: left to tk both are the same pale
+    # grey, distinguished only by a 3D edge, and the thumb went unnoticed.
     "dark":  {"bg": "black", "fg": "white", "titleFg": "lightyellow", "subdirFg": "#bbbbbb",
               "barBg": "#202020", "barFg": "white", "barActiveBg": "#3a3a3a", "panelBg": "#101010",
-              "separatorBg": "#606060"},
+              "separatorBg": "#606060",
+              "scrollThumb": "#1c1c1c", "scrollTrough": "#6e6e6e", "scrollActive": "#000000"},
     "light": {"bg": "white", "fg": "black", "titleFg": "darkgoldenrod", "subdirFg": "#555555",
               "barBg": "#e4e4e4", "barFg": "black", "barActiveBg": "#d0d0d0", "panelBg": "#efefef",
-              "separatorBg": "#b0b0b0"},
+              "separatorBg": "#b0b0b0",
+              "scrollThumb": "#7a7a7a", "scrollTrough": "#dcdcdc", "scrollActive": "#5a5a5a"},
 }
 
 
@@ -1769,7 +1774,9 @@ class SlideShow(tk.Tk):
         tableHolder=tk.Frame(panel, bg=pbg)
         tableHolder.pack(pady=(5, 0))
         tableCanvas=tk.Canvas(tableHolder, bg=pbg, highlightthickness=0)
-        tableScrollbar=tk.Scrollbar(tableHolder, orient=tk.VERTICAL, command=tableCanvas.yview)
+        tableScrollbar=tk.Scrollbar(tableHolder, orient=tk.VERTICAL, command=tableCanvas.yview,
+                                    bg=self.theme["scrollThumb"], activebackground=self.theme["scrollActive"],
+                                    troughcolor=self.theme["scrollTrough"], bd=0, highlightthickness=0)
         tableCanvas.configure(yscrollcommand=tableScrollbar.set)
         tableCanvas.pack(side=tk.LEFT)
         table=tk.Frame(tableCanvas, bg=pbg)
