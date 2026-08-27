@@ -165,6 +165,8 @@ MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then 
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
 DEFAULT_MAX_ENLARGEMENT=2.0     # How far a photo smaller than the screen may be blown up to fill it
+FACE_RING_GREEN="#00FF40"       # Marks a face: on the photo when a row is pointed at, and on
+                                # the row's own picture while that row is being typed in
 FILLED_BOX_BG="#ffffcc"         # An Identify Photo box with something typed in it...
 EMPTY_BOX_BG="white"            # ...and one still empty (what tk gives an Entry or Text here)
 KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold", "maximum enlargement"}
@@ -1677,7 +1679,7 @@ class SlideShow(tk.Tk):
         # The circle the row's thumbnail was cut from, scaled to the photo as displayed
         left, top, right, bottom=(v*self.displayScale for v in FaceCircleBounds(box))
         marked=self.displayedImage.copy()
-        ImageDraw.Draw(marked).ellipse((left, top, right, bottom), outline="#00FF40",
+        ImageDraw.Draw(marked).ellipse((left, top, right, bottom), outline=FACE_RING_GREEN,
                                        width=max(2, int((right-left)/24)))
         self.photo=ImageTk.PhotoImage(marked)
         self.imageLabel.config(image=self.photo)
@@ -1792,7 +1794,16 @@ class SlideShow(tk.Tk):
                 # Each row is numbered so a comment can refer to a face by its number
                 for i, (box, picture) in enumerate(zip(boxes, pictures)):
                     thumb=ImageTk.PhotoImage(picture)
+                    # The same round picture with a green ring drawn round it, shown while
+                    # this row's name box has the cursor.  The face circle is inscribed in
+                    # the square picture, so the ring is simply its outline -- the same
+                    # green and the same proportional width as the ring on the photo.
+                    ringed=picture.copy()
+                    ImageDraw.Draw(ringed).ellipse((0, 0, ringed.width-1, ringed.height-1),
+                                                   outline=FACE_RING_GREEN, width=max(2, ringed.width//24))
+                    ringedThumb=ImageTk.PhotoImage(ringed)
                     panel.thumbnails.append(thumb)
+                    panel.thumbnails.append(ringedThumb)        # Both kept, or tk collects them
                     numberLabel=tk.Label(table, text=f"#{i+1}", font=("Segoe UI", 12), fg=pfg, bg=pbg)
                     numberLabel.grid(row=i+1, column=0, padx=(0, 8), sticky="e")
                     faceLabel=tk.Label(table, image=thumb, bg=pbg)
@@ -1804,6 +1815,10 @@ class SlideShow(tk.Tk):
                     entry.grid(row=i+1, column=2, sticky="w")
                     nameEntries.append(entry)
                     tinted.append((entry, lambda v=var: len(v.get().strip()) > 0))
+                    # Typing in a row rings that row's face, so it stays clear whose name
+                    # is being written once the mouse has left the row to use the keyboard
+                    entry.bind("<FocusIn>", lambda e, lbl=faceLabel, im=ringedThumb: lbl.config(image=im))
+                    entry.bind("<FocusOut>", lambda e, lbl=faceLabel, im=thumb: lbl.config(image=im))
                     for w in (numberLabel, faceLabel, entry):
                         ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
                                    "You do not need to fill in any rows except ones you have data for.  "
