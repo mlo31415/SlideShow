@@ -165,6 +165,9 @@ MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then 
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
 DEFAULT_MAX_ENLARGEMENT=2.0     # How far a photo smaller than the screen may be blown up to fill it
+PANEL_BUTTON_FONT_SIZE=16       # Identify Photo's Save and Cancel (30% up from 12).  They carry no
+                                # icon, so their width counts characters: the font is what sizes
+                                # them, and growing it grows the button both ways at once.
 ENTRY_FONT_SIZE=16              # Identify Photo's name, date and address boxes (30% up from 12)
 COMMENTS_FONT_SIZE=14           # ...and its comments box (30% up from 11).  The labels beside
                                 # them are left alone: this is about what people type into.
@@ -1958,8 +1961,8 @@ class SlideShow(tk.Tk):
 
         buttons=tk.Frame(panel, bg=pbg)
         buttons.pack(pady=15)
-        tk.Button(buttons, text="Save", font=("Segoe UI", 12), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
-        cancelButton=tk.Button(buttons, text="Cancel", font=("Segoe UI", 12), width=9, command=Close)
+        tk.Button(buttons, text="Save", font=("Segoe UI", PANEL_BUTTON_FONT_SIZE), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
+        cancelButton=tk.Button(buttons, text="Cancel", font=("Segoe UI", PANEL_BUTTON_FONT_SIZE), width=9, command=Close)
         cancelButton.pack(side=tk.LEFT, padx=8)
 
         emailRow.pack(pady=(30, 0))     # Below the buttons, set apart from them
