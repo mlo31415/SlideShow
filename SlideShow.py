@@ -165,6 +165,8 @@ MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then 
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
 DEFAULT_MAX_ENLARGEMENT=2.0     # How far a photo smaller than the screen may be blown up to fill it
+FILLED_BOX_BG="#ffffcc"         # An Identify Photo box with something typed in it...
+EMPTY_BOX_BG="white"            # ...and one still empty (what tk gives an Entry or Text here)
 KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold", "maximum enlargement"}
 
 # The color schemes for the Mode parameter (default: dark)
@@ -1736,7 +1738,10 @@ class SlideShow(tk.Tk):
         tk.Label(table, text="Name", font=("Segoe UI", 12), fg=pfg, bg=pbg).grid(row=0, column=2, sticky="w")
         panel.thumbnails=[]             # Keep references so tk doesn't garbage-collect the images
         nameEntries=[]
-        inputVars=[]                    # Watched so the Cancel button can tell whether anything was entered
+        inputVars=[]                    # Watched, so a box can be tinted as soon as it has something in it
+        # Every box on the panel, with the question "is there anything in it?", so that
+        # TintBoxes can colour the filled ones without caring what kind of box each is
+        tinted=[]
         panel.boxes=[]                  # The faces, once they have been looked for
         # Reading the photograph and looking for faces in it is the slow part, and the
         # panel must not sit there unbuilt while it happens: it is put up at once,
@@ -1794,10 +1799,11 @@ class SlideShow(tk.Tk):
                     faceLabel.grid(row=i+1, column=1, padx=(0, 12), pady=4)
                     var=tk.StringVar()
                     inputVars.append(var)
-                    var.trace_add("write", UpdateCancelLabel)
+                    var.trace_add("write", TintBoxes)
                     entry=tk.Entry(table, font=("Segoe UI", 12), width=32, textvariable=var)
                     entry.grid(row=i+1, column=2, sticky="w")
                     nameEntries.append(entry)
+                    tinted.append((entry, lambda v=var: len(v.get().strip()) > 0))
                     for w in (numberLabel, faceLabel, entry):
                         ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
                                    "You do not need to fill in any rows except ones you have data for.  "
@@ -1816,6 +1822,7 @@ class SlideShow(tk.Tk):
         commentsLabel.pack()
         commentsBox=tk.Text(panel, font=("Segoe UI", 11), width=48, height=4)
         commentsBox.pack(pady=(4, 0))
+        tinted.append((commentsBox, lambda: len(commentsBox.get("1.0", tk.END).strip()) > 0))
         for w in (commentsLabel, commentsBox):
             ToolTip(w, "Tell us more: When/where was the photo taken?  Who took it?  Other interesting details.")
 
@@ -1827,6 +1834,7 @@ class SlideShow(tk.Tk):
         inputVars.append(dateVar)
         dateEntry=tk.Entry(dateRow, font=("Segoe UI", 12), width=30, textvariable=dateVar)
         dateEntry.pack(side=tk.LEFT)
+        tinted.append((dateEntry, lambda: len(dateVar.get().strip()) > 0))
         for w in (dateLabel, dateEntry):
             ToolTip(w, "If you know when this photo was taken, tell us here.  A year alone is fine.")
 
@@ -1836,10 +1844,10 @@ class SlideShow(tk.Tk):
         emailRow=tk.Frame(panel, bg=pbg)
         emailLabel=tk.Label(emailRow, text="Your name/email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
         emailLabel.pack(side=tk.LEFT, padx=(0, 8))
-        emailVar=tk.StringVar(value=self.editorEmail)       # Prefilled, so it only counts as input once changed
-        prefilledEmail=self.editorEmail
+        emailVar=tk.StringVar(value=self.editorEmail)       # Prefilled from the last save, while it is remembered
         emailEntry=tk.Entry(emailRow, font=("Segoe UI", 12), width=30, textvariable=emailVar)
         emailEntry.pack(side=tk.LEFT)
+        tinted.append((emailEntry, lambda: len(emailVar.get().strip()) > 0))
         for w in (emailLabel, emailEntry):
             ToolTip(w, "Please let us know who is submitting this information, so we can give you credit.")
 
@@ -1900,21 +1908,21 @@ class SlideShow(tk.Tk):
 
         emailRow.pack(pady=(30, 0))     # Below the buttons, set apart from them
 
-        # That button always reads "Cancel": it discards whatever has been entered, and
-        # saying so plainly whether or not anything has been typed yet is clearer than
-        # changing the word underneath somebody.  (It used to say "Close" while every box
-        # was still empty, which is why the watching below is still wired up.)
-        def UpdateCancelLabel(*args) -> None:
-            cancelButton.config(text="Cancel")
+        # A box with anything in it is tinted, so a glance shows what has been filled in
+        # and what has not -- worth having when the face table is long enough to scroll,
+        # and reassurance to somebody who has just typed a name that it was taken.
+        def TintBoxes(*args) -> None:
+            for box, hasContent in tinted:
+                box.config(bg=FILLED_BOX_BG if hasContent() else EMPTY_BOX_BG)
 
         for var in inputVars+[emailVar]:
-            var.trace_add("write", UpdateCancelLabel)
+            var.trace_add("write", TintBoxes)
         def OnCommentsModified(event=None) -> None:
             if commentsBox.edit_modified():
                 commentsBox.edit_modified(False)        # Rearm, and do not recurse on the reset
-                UpdateCancelLabel()
+                TintBoxes()
         commentsBox.bind("<<Modified>>", OnCommentsModified)
-        UpdateCancelLabel()
+        TintBoxes()                     # The email box may already be filled in from a previous save
 
         # Ready to type without reaching for the mouse: the first name box, or the
         # comments box when the photo has no faces to name
