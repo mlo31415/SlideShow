@@ -1837,14 +1837,14 @@ class SlideShow(tk.Tk):
                         ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
                                    "You do not need to fill in any rows except ones you have data for.  "
                                    "Point at the face to see who it is in the photo.")
-                    # Pointing at a row marks that face on the photo.  Pointing away goes
-                    # back to the face being typed about, rather than clearing the photo:
-                    # otherwise brushing the mouse across the panel would rub out the mark
-                    # on the very face whose name somebody is in the middle of writing.
+                    # One rule decides which face is circled on the photo.  If a name box
+                    # has the cursor it is that row's face, and nothing else moves it --
+                    # so the mark cannot be pulled off the face whose name is being
+                    # written.  Only when no name box has the cursor does pointing at a
+                    # row decide, and then pointing away clears the photo again.
                     for w in (numberLabel, faceLabel, entry):
-                        w.bind("<Enter>", lambda e, box=box: self.HighlightFace(box))
-                        w.bind("<Leave>", lambda e: self.HighlightFace(panel.focusedBox)
-                               if panel.focusedBox is not None else self.ClearHighlight())
+                        w.bind("<Enter>", lambda e, box=box: self.HighlightFace(box) if panel.focusedBox is None else None)
+                        w.bind("<Leave>", lambda e: self.ClearHighlight() if panel.focusedBox is None else None)
                 if len(commentsBox.get("1.0", tk.END).strip()) == 0:
                     nameEntries[0].focus_set()      # Ready to type -- unless a comment is already being written
 
