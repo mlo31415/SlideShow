@@ -27,6 +27,9 @@ The directory to be displayed and the other operating parameters are read from
     Mode                  "Dark" or "Light" color scheme  (default: Dark)
     Email Timeout         Seconds of no user input after which the remembered
                           email address is forgotten  (default: 60)
+    Identify Timeout      Seconds of no typing or touching with the Identify Photo
+                          panel open, after which it finishes by itself: saving if
+                          anything was written, cancelling if not  (default: 300)
     Face Detection        How sure the detector must be before it calls something a
       Threshold           face, 0 to 1: lower finds more faces, including doubtful
                           ones; higher finds only clear ones  (default: 0.6)
@@ -175,7 +178,7 @@ FACE_RING_GREEN="#00FF40"       # Marks a face: on the photo when a row is point
                                 # the row's own picture while that row is being typed in
 FILLED_BOX_BG="#ffffcc"         # An Identify Photo box with something typed in it...
 EMPTY_BOX_BG="white"            # ...and one still empty (what tk gives an Entry or Text here)
-KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold", "maximum enlargement"}
+KNOWN_PARAMETERS={"directories", "order", "display time", "title", "title font", "title font size", "display subdirectory", "pause timeout", "mode", "email timeout", "face detection threshold", "maximum enlargement", "identify timeout"}
 
 # The color schemes for the Mode parameter (default: dark)
 THEMES={
@@ -426,6 +429,12 @@ class SlideShow(tk.Tk):
             self.emailTimeout=60.0
         if self.emailTimeout <= 0:
             self.emailTimeout=60.0
+        try:
+            self.identifyTimeout=float(Get("Identify Timeout", "300"))
+        except ValueError:
+            self.identifyTimeout=300.0
+        if self.identifyTimeout <= 0:
+            self.identifyTimeout=300.0
         self.editorEmail=""             # Remembered between saves while the user stays active
         self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
         self.maxEnlargement=self.ResolveMaxEnlargement(Get("Maximum Enlargement", ""))
@@ -701,7 +710,7 @@ class SlideShow(tk.Tk):
             if not val.startswith("seq") and not val.startswith("random"):
                 problems.append(f"Order='{settings['order']}' should be Sequential or Random  (ignoring it)")
 
-        for pname, label in (("display time", "Display Time"), ("pause timeout", "Pause Timeout"), ("title font size", "Title Font Size"), ("email timeout", "Email Timeout")):
+        for pname, label in (("display time", "Display Time"), ("pause timeout", "Pause Timeout"), ("title font size", "Title Font Size"), ("email timeout", "Email Timeout"), ("identify timeout", "Identify Timeout")):
             if pname in settings:
                 try:
                     if float(settings[pname]) <= 0:
@@ -1029,7 +1038,11 @@ class SlideShow(tk.Tk):
     # pretty-printed JSON object followed by a blank line (concatenated JSON, loadable
     # with json.JSONDecoder().raw_decode in a loop) -- and rename the file so its name
     # carries the date and time of this latest save.
-    def LogSave(self, record: dict) -> None:
+    # quiet is for a save nobody asked for -- the Identify panel timing out with something
+    # written in it.  A failure then must not put a dialog on a public screen with nobody
+    # in front of it: that would stop the show until somebody came and cleared it, which is
+    # worse than the lost record it is reporting.
+    def LogSave(self, record: dict, quiet: bool=False) -> None:
         if self.outputPath is None:         # This session's first save creates the file
             self.outputPath=os.path.join(ProgramDirectory(),
                                          f"SlideShow Output {time.strftime('%Y-%m-%d %H.%M.%S')}.json")
@@ -1040,7 +1053,8 @@ class SlideShow(tk.Tk):
             with open(self.outputPath, "a", encoding="utf-8") as file:
                 file.write(text+"\n\n")
         except OSError as e:
-            messagebox.showwarning("SlideShow", f"This identification could not be saved:\n{e}", parent=self)
+            if not quiet:
+                messagebox.showwarning("SlideShow", f"This identification could not be saved:\n{e}", parent=self)
             return                      # The record really is lost; worth interrupting for
 
         # The name carries the time of the latest save, which is a convenience and not
@@ -1302,6 +1316,8 @@ class SlideShow(tk.Tk):
     # Once a second: resume a paused show which has sat without user input for longer
     # than the pause timeout, and check the settings file for changes.
     def OnTick(self) -> None:
+        if self.identifyPanel is not None and time.time()-self.lastInputTime >= self.identifyTimeout:
+            self.TimeOutIdentifyPanel()
         if self.paused and not self.dialogOpen and time.time()-self.lastInputTime >= self.pauseTimeout:
             self.Resume()
         if len(self.editorEmail) > 0 and time.time()-self.lastInputTime >= self.emailTimeout:
@@ -1381,6 +1397,13 @@ class SlideShow(tk.Tk):
             emailTimeout=self.emailTimeout
         if emailTimeout > 0:
             self.emailTimeout=emailTimeout
+
+        try:
+            identifyTimeout=float(Get("Identify Timeout", "300"))
+        except ValueError:
+            identifyTimeout=self.identifyTimeout
+        if identifyTimeout > 0:
+            self.identifyTimeout=identifyTimeout
 
         self.faceThreshold=self.ResolveFaceThreshold(Get("Face Detection Threshold", ""))
         self.maxEnlargement=self.ResolveMaxEnlargement(Get("Maximum Enlargement", ""))
@@ -1522,6 +1545,18 @@ class SlideShow(tk.Tk):
     # -- and offer to keep it, since keeping it is almost certainly what was meant.  With
     # nothing typed nothing is asked, so touching through photos is unaffected.
     # True means it is all right to leave.
+    # Nobody has typed or touched anything for Identify Timeout seconds, so whoever opened
+    # the panel has walked away from it.  Finish as they would have: save if they had
+    # written anything, cancel if they had not, and let the show go on.  Without this the
+    # panel holds the show on one photograph for the rest of the day -- the ordinary pause
+    # timeout is deliberately suppressed while somebody is identifying faces, and there is
+    # nothing else to notice that nobody is there any more.
+    def TimeOutIdentifyPanel(self) -> None:
+        panel=self.identifyPanel
+        if panel.HasInput():
+            panel.WriteRecord(quiet=True)   # Nobody is at the screen to read a warning
+        self.CloseIdentifyPanel()           # As Cancel does: panel away, show running again
+
     def LeaveIdentifyPanel(self) -> bool:
         panel=self.identifyPanel
         if panel is None or not panel.HasInput():
@@ -1996,7 +2031,7 @@ class SlideShow(tk.Tk):
 
         # Writing the record is separate from closing the panel, because moving on to the
         # next photo needs to save without the panel being put away and the show restarted
-        def WriteRecord() -> None:
+        def WriteRecord(quiet: bool=False) -> None:
             # The photo's Piwigo id and file name come from its .xml companion file
             photoId=None
             photoFile=os.path.basename(pathname)
@@ -2022,7 +2057,7 @@ class SlideShow(tk.Tk):
                 "faces":      [{"number": i+1, "name": e.get().strip(), "box": list(box)} for i, (e, box) in enumerate(zip(nameEntries, panel.boxes))],
                 "comment":    commentsBox.get("1.0", tk.END).strip(),
                 "photo date": dateEntry.get().strip(),
-            })
+            }, quiet)
 
         def OnSave() -> None:
             WriteRecord()
