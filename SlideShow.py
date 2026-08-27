@@ -1895,18 +1895,17 @@ class SlideShow(tk.Tk):
         buttons=tk.Frame(panel, bg=pbg)
         buttons.pack(pady=15)
         tk.Button(buttons, text="Save", font=("Segoe UI", 12), width=9, command=OnSave).pack(side=tk.LEFT, padx=8)
-        cancelButton=tk.Button(buttons, text="Close", font=("Segoe UI", 12), width=9, command=Close)
+        cancelButton=tk.Button(buttons, text="Cancel", font=("Segoe UI", 12), width=9, command=Close)
         cancelButton.pack(side=tk.LEFT, padx=8)
 
         emailRow.pack(pady=(30, 0))     # Below the buttons, set apart from them
 
-        # That button discards whatever has been entered, so it says "Cancel" once
-        # there is something to discard and "Close" while every box is still empty
+        # That button always reads "Cancel": it discards whatever has been entered, and
+        # saying so plainly whether or not anything has been typed yet is clearer than
+        # changing the word underneath somebody.  (It used to say "Close" while every box
+        # was still empty, which is why the watching below is still wired up.)
         def UpdateCancelLabel(*args) -> None:
-            entered=(any(len(v.get().strip()) > 0 for v in inputVars)
-                     or len(commentsBox.get("1.0", tk.END).strip()) > 0
-                     or emailVar.get().strip() != prefilledEmail)
-            cancelButton.config(text="Cancel" if entered else "Close")
+            cancelButton.config(text="Cancel")
 
         for var in inputVars+[emailVar]:
             var.trace_add("write", UpdateCancelLabel)
