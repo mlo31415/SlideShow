@@ -579,13 +579,11 @@ class SlideShow(tk.Tk):
 
         self.imageLabel=tk.Label(innerFrame, bg="black")
         self.imageLabel.pack(side=tk.TOP)
-        # Touching or clicking the photo does what the Pause/Start Slideshow button does:
-        # it stops a running show and starts a paused one.  On a touch screen that is the
-        # obvious gesture, and it is the only control a visitor can find without being
-        # told.  Going through OnPauseContinue means it obeys the same rule as the button
-        # about the Identify Photo panel -- while somebody is identifying faces the show
-        # stays paused, and touching the photo will not start it running under them.
-        self.imageLabel.bind("<Button-1>", lambda e: self.OnPauseContinue())
+        # Touching or clicking the photo pauses a running show and starts a paused one --
+        # on a touch screen the obvious gesture, and the only control a visitor can find
+        # without being told.  While the Identify Photo panel is up the same touch means
+        # something better: it picks out the face touched.  Both live in OnPhotoClick.
+        self.imageLabel.bind("<Button-1>", self.OnPhotoClick)
 
         self.captionFont=tkfont.Font(family="Segoe UI", size=CAPTION_FONT_SIZE)
         self.descLabel=tk.Label(innerFrame, text="", font=self.captionFont, fg="white", bg="black",
@@ -1690,6 +1688,40 @@ class SlideShow(tk.Tk):
         self.photo=ImageTk.PhotoImage(marked)
         self.imageLabel.config(image=self.photo)
 
+    # Touching a face on the photograph itself is the most direct way of saying who
+    # somebody is, and on a touch screen it is the gesture people try first.  It puts the
+    # cursor in that face's name box; the focus rules then ring the face on the photo and
+    # on its row, and Enter walks on down the rest.  With no panel up the photo is the
+    # pause control instead, which is what it has always been.
+    def OnPhotoClick(self, event) -> None:
+        panel=self.identifyPanel
+        if panel is None:
+            self.OnPauseContinue()
+            return
+        # No shared geometry, or a photo which never displayed, means no faces to touch --
+        # and the second guard is also what promises displayScale has been worked out
+        if FaceCircleBounds is None or getattr(self, "displayedImage", None) is None:
+            return
+        # The photo sits inside the label's border, so the touch lands a couple of pixels
+        # off the image.  Taking the offset from the two actual sizes corrects it whatever
+        # border and padding the label happens to have.
+        x=event.x-(self.imageLabel.winfo_width()-self.displayedImage.width)//2
+        y=event.y-(self.imageLabel.winfo_height()-self.displayedImage.height)//2
+        # The circles are in the original photograph's pixels and the photo on screen is
+        # displayScale of that.  Of the circles touched, the nearest centre wins, so
+        # overlapping faces in a group pick out the one actually aimed at.  Distances are
+        # compared squared, which orders them the same and needs no square root.
+        best, bestDistance=None, 0.0
+        for i, box in enumerate(getattr(panel, "boxes", [])):
+            left, top, right, bottom=(v*self.displayScale for v in FaceCircleBounds(box))
+            radius=(right-left)/2
+            dx, dy=x-(left+right)/2, y-(top+bottom)/2
+            distance=dx*dx+dy*dy
+            if distance <= radius*radius and (best is None or distance < bestDistance):
+                best, bestDistance=i, distance
+        if best is not None and best < len(panel.nameEntries):
+            panel.nameEntries[best].focus_set()
+
     def ClearHighlight(self) -> None:
         if getattr(self, "displayedImage", None) is None:
             return
@@ -1746,6 +1778,7 @@ class SlideShow(tk.Tk):
         tk.Label(table, text="Name", font=("Segoe UI", 12), fg=pfg, bg=pbg).grid(row=0, column=2, sticky="w")
         panel.thumbnails=[]             # Keep references so tk doesn't garbage-collect the images
         nameEntries=[]
+        panel.nameEntries=nameEntries   # The same list, so touching a face on the photo can reach the rows
         inputVars=[]                    # Watched, so a box can be tinted as soon as it has something in it
         # Every box on the panel, with the question "is there anything in it?", so that
         # TintBoxes can colour the filled ones without caring what kind of box each is
