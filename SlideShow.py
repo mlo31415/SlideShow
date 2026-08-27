@@ -168,6 +168,9 @@ MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then 
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
 DEFAULT_MAX_ENLARGEMENT=2.0     # How far a photo smaller than the screen may be blown up to fill it
+SHOW_MENU_FONT_SIZE=15          # "Select Photo Show" on the top bar (40% up from 11)...
+SHOW_MENU_ITEM_FONT_SIZE=13     # ...and the shows listed when it drops down (40% up from the 9pt
+                                # system menu font it used to take, which was the small one)
 PANEL_BUTTON_FONT_SIZE=16       # Identify Photo's Save and Cancel (30% up from 12).  They carry no
                                 # icon, so their width counts characters: the font is what sizes
                                 # them, and growing it grows the button both ways at once.
@@ -521,10 +524,12 @@ class SlideShow(tk.Tk):
         self.closeButton.pack(side=tk.RIGHT)
 
         # The Select Photo Show menu: one radio-checked entry per listed directory
-        self.showMenuButton=tk.Menubutton(self.topBar, text="Select Photo Show", font=("Segoe UI", 11),
+        self.showMenuButton=tk.Menubutton(self.topBar, text="Select Photo Show", font=("Segoe UI", SHOW_MENU_FONT_SIZE),
                                           fg="white", bg="#202020", activebackground="#3a3a3a", activeforeground="white",
                                           relief=tk.FLAT)
-        self.showMenu=tk.Menu(self.showMenuButton, tearoff=False)
+        # The dropped-down list needs its own font: left alone a tk.Menu takes the system
+        # menu font, which is smaller than anything else on the screen
+        self.showMenu=tk.Menu(self.showMenuButton, tearoff=False, font=("Segoe UI", SHOW_MENU_ITEM_FONT_SIZE))
         self.showMenuButton.config(menu=self.showMenu)
         self.showMenuButton.pack(side=tk.LEFT, padx=6)
         self.showVar=tk.StringVar(value=self.currentShowName)
