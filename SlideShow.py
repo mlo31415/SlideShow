@@ -165,6 +165,9 @@ MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then 
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
 DEFAULT_MAX_ENLARGEMENT=2.0     # How far a photo smaller than the screen may be blown up to fill it
+ENTRY_FONT_SIZE=16              # Identify Photo's name, date and address boxes (30% up from 12)
+COMMENTS_FONT_SIZE=14           # ...and its comments box (30% up from 11).  The labels beside
+                                # them are left alone: this is about what people type into.
 FACE_RING_GREEN="#00FF40"       # Marks a face: on the photo when a row is pointed at, and on
                                 # the row's own picture while that row is being typed in
 FILLED_BOX_BG="#ffffcc"         # An Identify Photo box with something typed in it...
@@ -1812,7 +1815,7 @@ class SlideShow(tk.Tk):
                     var=tk.StringVar()
                     inputVars.append(var)
                     var.trace_add("write", TintBoxes)
-                    entry=tk.Entry(table, font=("Segoe UI", 12), width=32, textvariable=var)
+                    entry=tk.Entry(table, font=("Segoe UI", ENTRY_FONT_SIZE), width=32, textvariable=var)
                     entry.grid(row=i+1, column=2, sticky="w")
                     nameEntries.append(entry)
                     tinted.append((entry, lambda v=var: len(v.get().strip()) > 0))
@@ -1853,7 +1856,7 @@ class SlideShow(tk.Tk):
         tk.Label(panel, text="", bg=pbg).pack()
         commentsLabel=tk.Label(panel, text="Other Comments and Corrections", font=("Segoe UI", 12), fg=pfg, bg=pbg)
         commentsLabel.pack()
-        commentsBox=tk.Text(panel, font=("Segoe UI", 11), width=48, height=4)
+        commentsBox=tk.Text(panel, font=("Segoe UI", COMMENTS_FONT_SIZE), width=48, height=4)
         commentsBox.pack(pady=(4, 0))
         tinted.append((commentsBox, lambda: len(commentsBox.get("1.0", tk.END).strip()) > 0))
         for w in (commentsLabel, commentsBox):
@@ -1865,7 +1868,7 @@ class SlideShow(tk.Tk):
         dateLabel.pack(side=tk.LEFT, padx=(0, 8))
         dateVar=tk.StringVar()
         inputVars.append(dateVar)
-        dateEntry=tk.Entry(dateRow, font=("Segoe UI", 12), width=30, textvariable=dateVar)
+        dateEntry=tk.Entry(dateRow, font=("Segoe UI", ENTRY_FONT_SIZE), width=30, textvariable=dateVar)
         dateEntry.pack(side=tk.LEFT)
         tinted.append((dateEntry, lambda: len(dateVar.get().strip()) > 0))
         for w in (dateLabel, dateEntry):
@@ -1878,7 +1881,7 @@ class SlideShow(tk.Tk):
         emailLabel=tk.Label(emailRow, text="Your name/email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
         emailLabel.pack(side=tk.LEFT, padx=(0, 8))
         emailVar=tk.StringVar(value=self.editorEmail)       # Prefilled from the last save, while it is remembered
-        emailEntry=tk.Entry(emailRow, font=("Segoe UI", 12), width=30, textvariable=emailVar)
+        emailEntry=tk.Entry(emailRow, font=("Segoe UI", ENTRY_FONT_SIZE), width=30, textvariable=emailVar)
         emailEntry.pack(side=tk.LEFT)
         tinted.append((emailEntry, lambda: len(emailVar.get().strip()) > 0))
 
