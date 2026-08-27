@@ -1745,6 +1745,7 @@ class SlideShow(tk.Tk):
         # TintBoxes can colour the filled ones without caring what kind of box each is
         tinted=[]
         panel.boxes=[]                  # The faces, once they have been looked for
+        panel.focusedBox=None           # The face whose name box has the cursor, if any
         # Reading the photograph and looking for faces in it is the slow part, and the
         # panel must not sit there unbuilt while it happens: it is put up at once,
         # saying so, and the rows are added when the thread comes back.
@@ -1815,18 +1816,33 @@ class SlideShow(tk.Tk):
                     entry.grid(row=i+1, column=2, sticky="w")
                     nameEntries.append(entry)
                     tinted.append((entry, lambda v=var: len(v.get().strip()) > 0))
-                    # Typing in a row rings that row's face, so it stays clear whose name
-                    # is being written once the mouse has left the row to use the keyboard
-                    entry.bind("<FocusIn>", lambda e, lbl=faceLabel, im=ringedThumb: lbl.config(image=im))
-                    entry.bind("<FocusOut>", lambda e, lbl=faceLabel, im=thumb: lbl.config(image=im))
+                    # Typing in a row rings that row's face both ways -- on the row's own
+                    # picture and on the photo -- so it stays clear whose name is being
+                    # written once the mouse has left the row to use the keyboard
+                    def OnRowFocus(e, lbl=faceLabel, im=ringedThumb, box=box) -> None:
+                        lbl.config(image=im)
+                        panel.focusedBox=box
+                        self.HighlightFace(box)
+
+                    def OnRowUnfocus(e, lbl=faceLabel, im=thumb) -> None:
+                        lbl.config(image=im)
+                        panel.focusedBox=None
+                        self.ClearHighlight()
+
+                    entry.bind("<FocusIn>", OnRowFocus)
+                    entry.bind("<FocusOut>", OnRowUnfocus)
                     for w in (numberLabel, faceLabel, entry):
                         ToolTip(w, "If you can identify this person, give us a name and, if appropriate, a reason why.  (The latter is not required)  "
                                    "You do not need to fill in any rows except ones you have data for.  "
                                    "Point at the face to see who it is in the photo.")
-                    # Pointing at a row marks that face on the photo
+                    # Pointing at a row marks that face on the photo.  Pointing away goes
+                    # back to the face being typed about, rather than clearing the photo:
+                    # otherwise brushing the mouse across the panel would rub out the mark
+                    # on the very face whose name somebody is in the middle of writing.
                     for w in (numberLabel, faceLabel, entry):
                         w.bind("<Enter>", lambda e, box=box: self.HighlightFace(box))
-                        w.bind("<Leave>", lambda e: self.ClearHighlight())
+                        w.bind("<Leave>", lambda e: self.HighlightFace(panel.focusedBox)
+                               if panel.focusedBox is not None else self.ClearHighlight())
                 if len(commentsBox.get("1.0", tk.END).strip()) == 0:
                     nameEntries[0].focus_set()      # Ready to type -- unless a comment is already being written
 
