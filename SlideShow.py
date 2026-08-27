@@ -1516,12 +1516,33 @@ class SlideShow(tk.Tk):
         self.UpdateButtonStates()
         self.ScheduleAdvance()
 
-    # Prev and Next work while the Identify Photo panel is up: anything typed there and
-    # not yet saved is discarded, the photo moves, and the panel is rebuilt for it.
+    # Moving to another photo takes the Identify Photo panel with it, and everything typed
+    # into it: somebody who has just named four faces and touches Next to see the next
+    # picture would lose all four without a word.  So when there is something to lose, ask
+    # -- and offer to keep it, since keeping it is almost certainly what was meant.  With
+    # nothing typed nothing is asked, so touching through photos is unaffected.
+    # True means it is all right to leave.
+    def LeaveIdentifyPanel(self) -> bool:
+        panel=self.identifyPanel
+        if panel is None or not panel.HasInput():
+            return True
+        answer=messagebox.askyesnocancel("SlideShow",
+                                         "You have not saved what you typed about this photo.\n\n"
+                                         "Save it before moving to another photo?", parent=self)
+        if answer is None:
+            return False            # Thought better of it: stay on this photo, panel intact
+        if answer:
+            panel.WriteRecord()     # Save, but leave the panel to be closed by the move
+        return True
+
+    # Prev and Next work while the Identify Photo panel is up: the photo moves and the
+    # panel is rebuilt for it, once anything typed has been saved or given up on.
     def OnNext(self) -> None:
         if self.dialogOpen and self.identifyPanel is None:
             return                  # Some other dialog is up
         if self.identifyPanel is not None:
+            if not self.LeaveIdentifyPanel():
+                return
             self.CloseIdentifyPanel(restore=False)
             self.NextImage()
             self.OnAddInfo(reopening=True)
@@ -1535,6 +1556,8 @@ class SlideShow(tk.Tk):
         if self.identifyPanel is not None:
             if self.histpos == 0:
                 return              # Nothing earlier to go to; leave the panel alone
+            if not self.LeaveIdentifyPanel():
+                return
             self.CloseIdentifyPanel(restore=False)
             self.PrevImage()
             self.OnAddInfo(reopening=True)
@@ -1924,6 +1947,7 @@ class SlideShow(tk.Tk):
         emailLabel=tk.Label(emailRow, text="Your name/email address:", font=("Segoe UI", 12), fg=pfg, bg=pbg)
         emailLabel.pack(side=tk.LEFT, padx=(0, 8))
         emailVar=tk.StringVar(value=self.editorEmail)       # Prefilled from the last save, while it is remembered
+        prefilledEmail=self.editorEmail                     # What it holds before anybody touches it
         emailEntry=tk.Entry(emailRow, font=("Segoe UI", ENTRY_FONT_SIZE), width=30, textvariable=emailVar)
         emailEntry.pack(side=tk.LEFT)
         tinted.append((emailEntry, lambda: len(emailVar.get().strip()) > 0))
@@ -1970,7 +1994,9 @@ class SlideShow(tk.Tk):
             self.ShowImage()            # Rescale the photo back to the full display
         self.CloseIdentifyPanel=Close
 
-        def OnSave() -> None:
+        # Writing the record is separate from closing the panel, because moving on to the
+        # next photo needs to save without the panel being put away and the show restarted
+        def WriteRecord() -> None:
             # The photo's Piwigo id and file name come from its .xml companion file
             photoId=None
             photoFile=os.path.basename(pathname)
@@ -1997,7 +2023,18 @@ class SlideShow(tk.Tk):
                 "comment":    commentsBox.get("1.0", tk.END).strip(),
                 "photo date": dateEntry.get().strip(),
             })
+
+        def OnSave() -> None:
+            WriteRecord()
             Close()
+
+        # Is there anything here worth keeping?  The address box does not count while it
+        # still holds what was filled in from the last save: otherwise leaving a photo
+        # nobody had typed a word about would stop and ask.
+        panel.WriteRecord=WriteRecord
+        panel.HasInput=lambda: (any(len(v.get().strip()) > 0 for v in inputVars)
+                                or len(commentsBox.get("1.0", tk.END).strip()) > 0
+                                or emailVar.get().strip() != prefilledEmail)
 
         buttons=tk.Frame(panel, bg=pbg)
         buttons.pack(pady=15)
