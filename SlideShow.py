@@ -168,9 +168,10 @@ MIN_SUBDIR_FONT_SIZE=14         # ...down to this to fit beside the title, then 
 FACE_DETECT_MAXDIM=1600         # Photos are reduced to this before face detection (bigger finds smaller faces)
 DEFAULT_FACE_THRESHOLD=0.6      # Detector confidence needed to call something a face
 DEFAULT_MAX_ENLARGEMENT=2.0     # How far a photo smaller than the screen may be blown up to fill it
-SHOW_MENU_FONT_SIZE=15          # "Select Photo Show" on the top bar (40% up from 11)...
-SHOW_MENU_ITEM_FONT_SIZE=13     # ...and the shows listed when it drops down (40% up from the 9pt
-                                # system menu font it used to take, which was the small one)
+SHOW_MENU_FONT_SIZE=18          # "Select Photo Show" on the top bar (11 -> 15 -> another 20%)...
+SHOW_MENU_ITEM_FONT_SIZE=16     # ...and the shows listed when it drops down (the 9pt system menu
+                                # font it used to take -> 13 -> another 20%).  This is the control
+                                # a visitor uses to choose what to look at, from a step away.
 PANEL_BUTTON_FONT_SIZE=16       # Identify Photo's Save and Cancel (30% up from 12).  They carry no
                                 # icon, so their width counts characters: the font is what sizes
                                 # them, and growing it grows the button both ways at once.
