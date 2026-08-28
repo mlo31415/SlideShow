@@ -490,6 +490,11 @@ class SlideShow(tk.Tk):
         self.history: list[int]=[]
         self.histpos=-1
 
+        # Random order deals the photographs out like a pack of cards: what is left to
+        # show, and the list it was dealt from, so that changing show deals a fresh pack.
+        self.unshown: list[int]=[]
+        self.unshownFrom=None
+
         self.paused=False
         self.dialogOpen=False           # True while the Identify Photo panel (or a message) is up
         self.identifyPanel=None         # The Identify Photo panel, when it is up
@@ -1183,16 +1188,35 @@ class SlideShow(tk.Tk):
             self.histpos+=1
         else:
             if self.randomOrder:
-                index=random.randrange(len(self.images))
-                # Avoid showing the same image twice in a row
-                if len(self.history) > 0 and len(self.images) > 1:
-                    while index == self.history[-1]:
-                        index=random.randrange(len(self.images))
+                index=self.NextRandomIndex()
             else:
                 index=0 if len(self.history) == 0 else (self.history[-1]+1)%len(self.images)
             self.history.append(index)
             self.histpos=len(self.history)-1
         self.ShowImage()
+
+    # In random order the photographs are dealt out like a pack of cards: each is shown
+    # once, in a random order, and only when all of them have been seen is the pack put
+    # back together.  Drawing independently at random instead -- which is what this did
+    # before -- shows some photographs three times before others appear at all: covering
+    # 1,826 of them needs about n*ln(n) draws, some sixteen hours at four seconds each,
+    # against two hours for one full pass.
+    #
+    # The pack is dealt again from the beginning when it runs out, and also when the list
+    # itself is replaced -- picking another show, editing the shows, or a new directory in
+    # the settings -- which is what comparing the list object catches, without every one
+    # of those places having to remember to say so.
+    def NextRandomIndex(self) -> int:
+        if self.unshownFrom is not self.images or len(self.unshown) == 0:
+            self.unshown=list(range(len(self.images)))
+            self.unshownFrom=self.images
+        choice=random.randrange(len(self.unshown))
+        # A fresh pack must not open with the photograph the last one ended on.  This can
+        # only happen just after dealing again: within a pack, what has been shown is no
+        # longer in it.
+        if len(self.unshown) > 1 and len(self.history) > 0 and self.unshown[choice] == self.history[-1]:
+            choice=(choice+1)%len(self.unshown)
+        return self.unshown.pop(choice)
 
     def PrevImage(self) -> None:
         if self.histpos > 0:
