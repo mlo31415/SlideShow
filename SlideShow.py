@@ -486,14 +486,11 @@ class SlideShow(tk.Tk):
         if len(self.images) == 0:
             self.Fatal(f"No image files found in the photo shows under '{self.rootDirectory}'.")
 
-        # History of images shown (indexes into self.images), so Prev can back up even in random order.
-        self.history: list[int]=[]
-        self.histpos=-1
-
-        # Random order deals the photographs out like a pack of cards: what is left to
-        # show, and the list it was dealt from, so that changing show deals a fresh pack.
-        self.unshown: list[int]=[]
-        self.unshownFrom=None
+        # The order the photographs are shown in: indexes into self.images, settled once
+        # when a show is picked, and walked round and round.  See SetOrder.
+        self.order: list[int]=[]
+        self.orderPos=-1                # Nothing shown yet; the first Next shows order[0]
+        self.SetOrder()
 
         self.paused=False
         self.dialogOpen=False           # True while the Identify Photo panel (or a message) is up
@@ -879,7 +876,7 @@ class SlideShow(tk.Tk):
         if self.identifyPanel is not None:
             # This monitor may be a different shape, so the split has to be redone
             self.FitFaceTable(self.PackIdentifyPanel())
-        if len(self.history) > 0:
+        if self.orderPos >= 0:
             self.ShowImage()            # Rescale to this monitor (also refits the header)
 
     # -------------------- Work done off the screen's thread --------------------
@@ -1038,8 +1035,7 @@ class SlideShow(tk.Tk):
         self.showVar.set(self.currentShowName)
         self.RebuildShowMenu()
         self.images=images
-        self.history=[]
-        self.histpos=-1
+        self.SetOrder()
         self.NextImage()
         self.ScheduleAdvance()
         self.SaveState()
@@ -1119,8 +1115,7 @@ class SlideShow(tk.Tk):
                 return
             self.currentShowName=name
             self.images=images
-            self.history=[]
-            self.histpos=-1
+            self.SetOrder()
             self.NextImage()
             self.ScheduleAdvance()
             self.SaveState()
@@ -1182,49 +1177,39 @@ class SlideShow(tk.Tk):
 
 
     # -------------------- Image selection --------------------
-    # Move forward:  through the history if we had backed up with Prev, otherwise to a new image.
+    # Settle the order the photographs will be shown in.  Called whenever the list of
+    # photographs is replaced -- a show picked, the shows edited, a new directory in the
+    # settings -- and when the Order parameter changes.
+    #
+    # In random order the whole show is shuffled once, here, and then simply walked round
+    # and round.  That keeps every photograph appearing once per pass, which drawing each
+    # one independently did not: over 20 draws from 20 photographs that showed only 12 of
+    # them, and covering 1,826 took some 13,000 draws -- 14.6 hours at four seconds each
+    # against 2.0 for a pass.  But it also makes Next and Prev exact opposites: the order
+    # is fixed in advance, so stepping back and forward retraces the same photographs
+    # instead of inventing new ones, and there is no history to keep.
+    def SetOrder(self) -> None:
+        self.order=list(range(len(self.images)))
+        if self.randomOrder:
+            random.shuffle(self.order)
+        self.orderPos=-1                # The next Next starts the new order at its beginning
+
+    # Next and Prev are one step along that order, wrapping at each end: the show is a
+    # circle, and going back from the first photograph reaches the last.
     def NextImage(self) -> None:
-        if self.histpos < len(self.history)-1:
-            self.histpos+=1
-        else:
-            if self.randomOrder:
-                index=self.NextRandomIndex()
-            else:
-                index=0 if len(self.history) == 0 else (self.history[-1]+1)%len(self.images)
-            self.history.append(index)
-            self.histpos=len(self.history)-1
+        if len(self.order) == 0:
+            return                      # A show with no photographs in it: nothing to move to
+        self.orderPos=(self.orderPos+1)%len(self.order)
         self.ShowImage()
 
-    # In random order the photographs are dealt out like a pack of cards: each is shown
-    # once, in a random order, and only when all of them have been seen is the pack put
-    # back together.  Drawing independently at random instead -- which is what this did
-    # before -- shows some photographs three times before others appear at all: covering
-    # 1,826 of them needs about n*ln(n) draws, some sixteen hours at four seconds each,
-    # against two hours for one full pass.
-    #
-    # The pack is dealt again from the beginning when it runs out, and also when the list
-    # itself is replaced -- picking another show, editing the shows, or a new directory in
-    # the settings -- which is what comparing the list object catches, without every one
-    # of those places having to remember to say so.
-    def NextRandomIndex(self) -> int:
-        if self.unshownFrom is not self.images or len(self.unshown) == 0:
-            self.unshown=list(range(len(self.images)))
-            self.unshownFrom=self.images
-        choice=random.randrange(len(self.unshown))
-        # A fresh pack must not open with the photograph the last one ended on.  This can
-        # only happen just after dealing again: within a pack, what has been shown is no
-        # longer in it.
-        if len(self.unshown) > 1 and len(self.history) > 0 and self.unshown[choice] == self.history[-1]:
-            choice=(choice+1)%len(self.unshown)
-        return self.unshown.pop(choice)
-
     def PrevImage(self) -> None:
-        if self.histpos > 0:
-            self.histpos-=1
-            self.ShowImage()
+        if len(self.order) == 0:
+            return
+        self.orderPos=(self.orderPos-1)%len(self.order)
+        self.ShowImage()
 
     def ShowImage(self) -> None:
-        pathname=self.images[self.history[self.histpos]]
+        pathname=self.images[self.order[self.orderPos]]
 
         # The optional subdirectory line: the path below the root directory (including
         # the TLD name, so with several shows checked each photo shows which it is from)
@@ -1443,11 +1428,14 @@ class SlideShow(tk.Tk):
             self.ApplyTheme()
 
         order=Get("Order", "Sequential").casefold()
+        wasRandom=self.randomOrder
         if order.startswith("random"):
             self.randomOrder=True
         elif order.startswith("seq"):
             self.randomOrder=False
         # else: unrecognized value -- keep the current setting
+        if self.randomOrder != wasRandom:
+            self.SetOrder()             # Shuffle afresh, or go back to the order on disk
 
         # A new root directory: rediscover its top-level directories.  The existing shows
         # are kept if any of them still finds photos there; if none does, they described
@@ -1471,8 +1459,7 @@ class SlideShow(tk.Tk):
             self.currentShowName=name
             self.showVar.set(name)
             self.images=images
-            self.history=[]
-            self.histpos=-1
+            self.SetOrder()
             self.NextImage()
             self.ScheduleAdvance()
             self.RebuildShowMenu()
@@ -1618,8 +1605,6 @@ class SlideShow(tk.Tk):
         if self.dialogOpen and self.identifyPanel is None:
             return
         if self.identifyPanel is not None:
-            if self.histpos == 0:
-                return              # Nothing earlier to go to; leave the panel alone
             if not self.LeaveIdentifyPanel():
                 return
             self.CloseIdentifyPanel(restore=False)
@@ -1842,7 +1827,7 @@ class SlideShow(tk.Tk):
         for b in (self.pauseButton, self.addInfoButton):
             b.config(state=tk.DISABLED)
 
-        pathname=self.images[self.history[self.histpos]]
+        pathname=self.images[self.order[self.orderPos]]
         pbg=self.theme["panelBg"]
         pfg=self.theme["fg"]
         pdim=self.theme["subdirFg"]
