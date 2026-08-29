@@ -627,6 +627,11 @@ class SlideShow(tk.Tk):
         self.bind("<Left>", lambda e: self.OnArrowKey(False))
         self.bind("<Right>", lambda e: self.OnArrowKey(True))
         self.bind("<Escape>", lambda e: self.OnEscape())
+        # Ctrl-S saves the identification being typed, as it does in everything else people
+        # use.  One binding on the window serves every box on the panel: neither Entry nor
+        # Text claims Ctrl-S, so the keystroke reaches here from whichever has the cursor.
+        self.bind("<Control-s>", self.OnControlS)
+        self.bind("<Control-S>", self.OnControlS)       # Shift or Caps Lock held down
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
         # Let the window get its real size before displaying the first image
@@ -1541,6 +1546,14 @@ class SlideShow(tk.Tk):
         lift=tallest//2 if portrait else 0
         self.buttonFrame.pack_configure(pady=(BUTTON_PAD_TOP, BUTTON_PAD_BOTTOM+lift))
 
+    # Ctrl-S is the Save button: it writes the record and puts the panel away, exactly as
+    # pressing Save does.  With no panel up there is nothing to save, so it does nothing
+    # rather than something surprising to a show running in front of the public.
+    def OnControlS(self, event=None) -> str:
+        if self.identifyPanel is not None:
+            self.identifyPanel.Save()
+        return "break"
+
     def OnPauseContinue(self) -> None:
         if self.dialogOpen:
             return
@@ -2090,6 +2103,7 @@ class SlideShow(tk.Tk):
 
         panel.WriteRecord=WriteRecord
         panel.HasInput=HasInput
+        panel.Save=OnSave               # So Ctrl-S can do exactly what the Save button does
 
         buttons=tk.Frame(panel, bg=pbg)
         buttons.pack(pady=15)
