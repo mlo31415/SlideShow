@@ -496,7 +496,6 @@ class SlideShow(tk.Tk):
         self.paused=False
         self.dialogOpen=False           # True while the Identify Photo panel (or a message) is up
         self.identifyPanel=None         # The Identify Photo panel, when it is up
-        self.identifyWasPaused=False    # The pause state to return to when it closes
         self.CloseIdentifyPanel=None    # Closes the panel (set while it is up)
         self.backgroundResults=queue.Queue()    # Answers from the working threads
         self.switchingTo=None           # The show being looked for, while it is being looked for
@@ -1610,7 +1609,7 @@ class SlideShow(tk.Tk):
                 return
             self.CloseIdentifyPanel(restore=False)
             self.NextImage()
-            self.OnAddInfo(reopening=True)
+            self.OnAddInfo()
             return
         self.NextImage()
         self.ScheduleAdvance()      # Restart the display-time clock
@@ -1623,7 +1622,7 @@ class SlideShow(tk.Tk):
                 return
             self.CloseIdentifyPanel(restore=False)
             self.PrevImage()
-            self.OnAddInfo(reopening=True)
+            self.OnAddInfo()
             return
         self.PrevImage()
         self.ScheduleAdvance()
@@ -1825,14 +1824,12 @@ class SlideShow(tk.Tk):
     # with a row for each face found (left-to-right), each with a box for the person's
     # name, then a box for general comments, and Save/Cancel -- takes the other.
     # While the panel is up the show is paused; when it closes, the show returns to
-    # whatever pause state it was in before.  Prev and Next stay live: they discard
-    # whatever is unsaved, move the photo, and rebuild the panel for it (reopening=True
-    # then, so that the pause state to return to is the one from the first opening).
-    def OnAddInfo(self, reopening: bool=False) -> None:
+    # While the panel is up the show is paused, and it stays paused when the panel closes.
+    # Prev and Next stay live: they discard whatever is unsaved, move the photo, and
+    # rebuild the panel for it.
+    def OnAddInfo(self) -> None:
         if self.identifyPanel is not None:
             return                      # Already open
-        if not reopening:
-            self.identifyWasPaused=self.paused
         self.paused=True
         self.dialogOpen=True
         self.CancelAdvance()
@@ -2059,10 +2056,11 @@ class SlideShow(tk.Tk):
             for b in (self.pauseButton, self.addInfoButton):
                 b.config(state=tk.NORMAL)
             self.lastInputTime=time.time()
-            if self.identifyWasPaused:
-                self.UpdateButtonStates()
-            else:
-                self.Resume()
+            # The show stays paused on the way out.  Somebody who has just finished with
+            # this photograph is still standing at the screen looking at it, and starting
+            # to advance out from under them is the wrong answer; Pause Timeout brings the
+            # show back by itself once they have wandered off.
+            self.UpdateButtonStates()
             self.update_idletasks()
             self.ShowImage()            # Rescale the photo back to the full display
         self.CloseIdentifyPanel=Close
