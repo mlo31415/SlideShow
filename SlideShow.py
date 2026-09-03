@@ -71,7 +71,11 @@ in green on the photo itself.  Prev and Next stay live while the
 panel is up: they discard anything unsaved, move to the next photo, and
 rebuild the panel for it; Pause and Add Info are disabled.
 Face detection uses OpenCV's YuNet model (the .onnx file alongside this
-script).
+script).  Faces less than a fifth as big across as the third-largest face in
+the same photo are left out: they are strays far back in a crowd that nobody
+could name, and the third-largest rather than the largest is the measure so
+that one head close to the camera cannot carry away everybody behind it.  A
+photo with fewer than three faces is never filtered.
 
 Each Save appends a record to this session's output log, "SlideShow Output
 <date and time of the latest save>.json" in the program's directory (a new
@@ -141,9 +145,9 @@ _HELPERS=os.path.join(os.path.dirname(ProgramDirectory()), "HelpersPackage")
 if os.path.isdir(_HELPERS) and _HELPERS not in sys.path:
     sys.path.append(_HELPERS)
 try:
-    from FaceGeometry import FaceCircleBounds, RoundFaceThumbnail
+    from FaceGeometry import FaceCircleBounds, RoundFaceThumbnail, DropTinyFaces
 except ImportError:
-    FaceCircleBounds=RoundFaceThumbnail=None       # Reported when a photo is identified
+    FaceCircleBounds=RoundFaceThumbnail=DropTinyFaces=None   # Reported when a photo is identified
 
 SETTINGS_FILE="SlideShow settings.txt"
 STATE_FILE="SlideShow state.json"
@@ -1680,6 +1684,9 @@ class SlideShow(tk.Tk):
         if faces is None:
             return []
         boxes=[(max(int(f[0]/scale), 0), max(int(f[1]/scale), 0), int(f[2]/scale), int(f[3]/scale)) for f in faces]
+        # Faces too small to identify are strays in the crowd behind: leave them out
+        if DropTinyFaces is not None:
+            boxes=DropTinyFaces(boxes)
         boxes.sort(key=lambda b: b[0])
         return boxes
 

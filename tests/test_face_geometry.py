@@ -104,5 +104,89 @@ class TheRoundPicture(unittest.TestCase):
         self.assertEqual(thumb.size, (72, 72))
 
 
+@unittest.skipUnless(_GOLDEN.is_file(), "the shared HelpersPackage is not beside SlideShow")
+class TheFacesTooSmallToBother(unittest.TestCase):
+    """A detector finds faces far back in a crowd that nobody could name.  They
+    are measured against the third-largest face in the same photo, so that one
+    head close to the camera cannot set the bar for everybody behind it."""
+
+    @staticmethod
+    def square(size, x=0):
+        return (x, 0, size, size)
+
+    def drop(self, boxes, ratio=None):
+        from FaceGeometry import DropTinyFaces, SMALL_FACE_RATIO
+        return DropTinyFaces(boxes, SMALL_FACE_RATIO if ratio is None else ratio)
+
+    def test_the_ratio_is_a_fifth(self):
+        from FaceGeometry import SMALL_FACE_RATIO
+        self.assertEqual(SMALL_FACE_RATIO, 0.20)
+
+    def test_it_is_measured_across_the_face_not_by_area(self):
+        """A face a fifth as wide is a speck; a face a fifth the *area* is
+        nearly half as wide, which is a person merely standing further back."""
+        from FaceGeometry import FaceSize
+        self.assertAlmostEqual(FaceSize((0, 0, 30, 40)), 50.0)
+
+    def test_a_speck_behind_a_crowd_goes(self):
+        boxes = [self.square(100), self.square(90, 200), self.square(80, 400),
+                 self.square(10, 600)]
+        self.assertEqual(len(self.drop(boxes)), 3)
+
+    def test_the_measure_is_the_third_largest_not_the_largest(self):
+        """One big foreground head must not carry away the faces behind it.
+        Third largest is 80, so the bar is 16: the 20 stays."""
+        boxes = [self.square(400), self.square(90, 500), self.square(80, 700),
+                 self.square(20, 900)]
+        self.assertEqual([b[2] for b in self.drop(boxes)], [400, 90, 80, 20])
+
+    def test_a_face_exactly_on_the_bar_stays(self):
+        boxes = [self.square(100), self.square(100, 200), self.square(100, 400),
+                 self.square(20, 600)]
+        self.assertEqual(len(self.drop(boxes)), 4)
+
+    def test_the_third_largest_itself_always_survives(self):
+        for sizes in ([50, 40, 30], [90, 12, 11, 10], [7, 7, 7, 7]):
+            with self.subTest(sizes=sizes):
+                boxes = [self.square(s, i*1000) for i, s in enumerate(sizes)]
+                kept = [b[2] for b in self.drop(boxes)]
+                self.assertIn(sorted(sizes, reverse=True)[2], kept)
+
+    def test_one_or_two_faces_are_left_alone(self):
+        """There is no third-largest to measure against, nothing to declutter,
+        and dropping one of two would be worse than keeping a small one."""
+        self.assertEqual(len(self.drop([self.square(100), self.square(3, 200)])), 2)
+        self.assertEqual(len(self.drop([self.square(100)])), 1)
+        self.assertEqual(self.drop([]), [])
+
+    def test_a_photo_of_evenly_sized_faces_loses_none(self):
+        boxes = [self.square(50, i*100) for i in range(8)]
+        self.assertEqual(len(self.drop(boxes)), 8)
+
+    def test_a_crowd_keeps_everyone_worth_naming(self):
+        """Six faces receding into the distance and two specks."""
+        boxes = [self.square(s, i*1000) for i, s in
+                 enumerate([120, 110, 100, 60, 40, 21, 19, 5])]
+        self.assertEqual([b[2] for b in self.drop(boxes)],
+                         [120, 110, 100, 60, 40, 21])
+
+    def test_the_boxes_come_back_unchanged(self):
+        boxes = [(5, 6, 100, 100), (7, 8, 90, 90), (9, 10, 80, 80)]
+        self.assertEqual(self.drop(boxes), boxes)
+
+    def test_degenerate_boxes_do_not_raise(self):
+        self.assertEqual(len(self.drop([self.square(0), self.square(0, 1),
+                                        self.square(0, 2)])), 3)
+
+
+@unittest.skipUnless(_GOLDEN.is_file(), "the shared HelpersPackage is not beside SlideShow")
+class DetectionUsesIt(unittest.TestCase):
+    def test_detect_faces_puts_its_boxes_through_the_filter(self):
+        """Without this the rule would live in the shared module unused."""
+        import inspect
+        source = inspect.getsource(ss.SlideShow.DetectFaces)
+        self.assertIn("DropTinyFaces(boxes)", source)
+
+
 if __name__ == "__main__":
     unittest.main()
