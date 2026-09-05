@@ -75,7 +75,8 @@ script).  Faces less than a fifth as big across as the third-largest face in
 the same photo are left out: they are strays far back in a crowd that nobody
 could name, and the third-largest rather than the largest is the measure so
 that one head close to the camera cannot carry away everybody behind it.  A
-photo with fewer than three faces is never filtered.
+photo of only two faces has no such crowd, and is measured against the larger
+of them; a photo of one face is never filtered.
 
 Each Save appends a record to this session's output log, "SlideShow Output
 <date and time of the latest save>.json" in the program's directory (a new

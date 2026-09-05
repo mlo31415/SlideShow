@@ -145,18 +145,26 @@ class TheFacesTooSmallToBother(unittest.TestCase):
                  self.square(20, 600)]
         self.assertEqual(len(self.drop(boxes)), 4)
 
-    def test_the_third_largest_itself_always_survives(self):
-        for sizes in ([50, 40, 30], [90, 12, 11, 10], [7, 7, 7, 7]):
+    def test_whichever_face_sets_the_bar_always_clears_it(self):
+        for sizes in ([50, 40, 30], [90, 12, 11, 10], [7, 7, 7, 7], [400, 9]):
             with self.subTest(sizes=sizes):
                 boxes = [self.square(s, i*1000) for i, s in enumerate(sizes)]
                 kept = [b[2] for b in self.drop(boxes)]
-                self.assertIn(sorted(sizes, reverse=True)[2], kept)
+                ordered = sorted(sizes, reverse=True)
+                self.assertIn(ordered[2] if len(sizes) >= 3 else ordered[0], kept)
 
-    def test_one_or_two_faces_are_left_alone(self):
-        """There is no third-largest to measure against, nothing to declutter,
-        and dropping one of two would be worse than keeping a small one."""
-        self.assertEqual(len(self.drop([self.square(100), self.square(3, 200)])), 2)
-        self.assertEqual(len(self.drop([self.square(100)])), 1)
+    def test_two_faces_are_measured_against_the_larger(self):
+        """No crowd here for the third-largest to protect, so the larger face
+        is the only reference there is."""
+        self.assertEqual([b[2] for b in self.drop([self.square(100),
+                                                   self.square(3, 200)])], [100])
+        self.assertEqual(len(self.drop([self.square(100), self.square(90, 200)])), 2)
+        self.assertEqual(len(self.drop([self.square(100), self.square(20, 200)])), 2,
+                         "exactly on the bar, so it stays")
+
+    def test_a_single_face_is_never_dropped(self):
+        """Nothing to compare it against, and it is the whole photograph."""
+        self.assertEqual(len(self.drop([self.square(3)])), 1)
         self.assertEqual(self.drop([]), [])
 
     def test_a_photo_of_evenly_sized_faces_loses_none(self):
